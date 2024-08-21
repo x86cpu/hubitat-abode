@@ -1,5 +1,7 @@
 # Abode Alarm driver for Hubitat
 
+## Originally developed by jorhett:  [https://github.com/jorhett/hubitat-abode](https://github.com/jorhett/hubitat-abode)
+
 Realtime management and tracking of an Abode Alarm system. This works for both controlling Abode from Hubitat,
 and also responding realtime in Hubitat to changes initiated from Abode (mobile, CUE automations, etc).
 
@@ -7,7 +9,8 @@ and also responding realtime in Hubitat to changes initiated from Abode (mobile,
 - Update Hubitat Mode based on Abode gateway mode changes
 - Copy Abode timeline events to Hubitat device events
 - Abode gateway mode changes and events can be used as Triggers in Hubitat Rule Manager
-- Renew access tokens automatically upon expiration
+- Renew access tokens automatically upon expiration (including MFA if seed is provided)
+- Added devices for Contact and Motion (Occupancy)
 
 ## Inspired by
 
@@ -28,6 +31,7 @@ Import the driver from following URL:
 
 * Multi-Factor Authentication is supported. *You are using MFA for your home security, aren't you?* **Aren't you?**
   You'll have to supply the MFA code when saving preferences for a successful connection if MFA is enabled.
+  You can supply MFA seed now and it will use that for unattended logins.
 
 ## Known limitations
 
@@ -45,6 +49,7 @@ Import the driver from following URL:
 
 * Standard [CHANGELOG](CHANGELOG.md) contains past change history
 * New features can be requested by supplying trace logs of the interesting traffic
+* Adding Smoke and Glass devices (need reliable way to cause an alarm on these for testing.)
 
 I'm open to adding new features, but lacking a lab full of Abode gear, I can't develop the features without seeing the interactions in detail. So features will only be added if you are willing to supply extensive trace logs from your setup so that I can see what your equipment says.
 
