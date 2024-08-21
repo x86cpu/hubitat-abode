@@ -137,8 +137,8 @@ def createChildDevices() {
       }
       if (getChildDevice(reply[cnt]['id']) == null) {
         if (logDebug) log.debug " Need to add child!"
-        if ( reply[cnt]['type'] == 'Door Contact' ) addChildDevice('jorhett', 'Abode Alarm Contact', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
-        if ( reply[cnt]['type'] == 'Occupancy' ) addChildDevice('jorhett', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
+        if ( reply[cnt]['type'] == 'Door Contact' ) addChildDevice('x86cpu', 'Abode Alarm Contact', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
+        if ( reply[cnt]['type'] == 'Occupancy' ) addChildDevice('x86cpu', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
       }
       if (getChildDevice(reply[cnt]['id'])!= null) {
         childDevice = getChildDevice(reply[cnt]['id'])
