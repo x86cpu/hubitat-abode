@@ -17,7 +17,7 @@
     name: 'Abode Alarm Motion',
     namespace: 'x86cpu',
     author: 'Eric Meddaugh',
-    importUrl: 'https://raw.githubusercontent.com/x86cpu/hubitat-abode/drivers/AbodeMotion.groovy',
+    importUrl: 'https://raw.githubusercontent.com/x86cpu/hubitat-abode/master/drivers/AbodeMotion.groovy',
   ) {
     capability 'MotionSensor'
     capability 'Sensor'

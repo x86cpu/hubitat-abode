@@ -17,7 +17,7 @@
     name: 'Abode Alarm Contact',
     namespace: 'x86cpu',
     author: 'Eric Meddaugh',
-    importUrl: 'https://raw.githubusercontent.com/x86cpu/hubitat-abode/drivers/AbodeContact.groovy',
+    importUrl: 'https://raw.githubusercontent.com/x86cpu/hubitat-abode/master/drivers/AbodeContact.groovy',
   ) {
     capability 'ContactSensor'
     capability 'Sensor'

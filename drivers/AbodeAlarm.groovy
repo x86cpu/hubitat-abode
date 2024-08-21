@@ -23,7 +23,7 @@ metadata {
     name: 'Abode Alarm',
     namespace: 'x86cpu',
     author: 'Jo Rhett/Eric Meddaugh',
-    importUrl: 'https://raw.githubusercontent.com/x86cpu/hubitat-abode/drivers/AbodeAlarm.groovy',
+    importUrl: 'https://raw.githubusercontent.com/x86cpu/hubitat-abode/master/drivers/AbodeAlarm.groovy',
   ) {
     capability 'Actuator'
     capability 'Refresh'
