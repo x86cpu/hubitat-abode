@@ -703,7 +703,7 @@ def parse(String message) {
 
   switch(packet_type) {
     case '0':
-      log.debug 'webSocket session open received'
+      if (logDebug) log.debug 'webSocket session open received'
       jsondata = parseJson(packet_data)
       if (jsondata.containsKey('pingInterval')) state.webSocketPingInterval = jsondata['pingInterval']
       if (jsondata.containsKey('pingTimeout'))  state.webSocketPingTimeout  = jsondata['pingTimeout']
@@ -711,7 +711,7 @@ def parse(String message) {
       break
 
     case '1':
-      log.debug 'webSocket session close received'
+      if (logDebug) log.debug 'webSocket session close received'
       restartEventSocket()
       break
 
@@ -773,14 +773,14 @@ def webSocketStatus(String message) {
   if (logTrace) log.trace 'webSocketStatus ' + message
   switch(message) {
     case ~/^status: open.*$/:
-      log.debug 'Connected to Abode event socket'
-		  sendEvent([name: 'lastResult', value: 'eventSocket connected'])
+      if (logDebug) log.debug 'Connected to Abode event socket'
+      sendEvent([name: 'lastResult', value: 'eventSocket connected'])
       state.webSocketConnected = true
       state.webSocketConnectAttempt = 0
 		  break
 
     case ~/^status: closing.*$/:
-      log.debug 'Closing connection to Abode event socket'
+      if (logDebug) log.debug 'Closing connection to Abode event socket'
       sendEvent([name: 'lastResult', value: 'eventSocket disconnected'])
       state.webSocketConnected = false
       state.webSocketConnectAttempt = 0
@@ -803,7 +803,6 @@ def webSocketStatus(String message) {
 }
 
 // TOTP groocy code:  https://github.com/osoco/groovy-OTP/blob/master/src/main/groovy/es/osoco/oath/totp/TOTP.groovy
-// TODO: key requires hex format, somehow base32 -> hex it for Abode
 
 /**
 * This method uses the JCE to provide the crypto algorithm.
