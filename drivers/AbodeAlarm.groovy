@@ -59,6 +59,7 @@ metadata {
     input name: 'showLogin',      type: 'bool',   title: 'Show login fields',                defaultValue: true,  description: '<em>Show login fields</em>', submitOnChange: true
     input name: 'logDebug',       type: 'bool',   title: 'Enable debug logging',             defaultValue: true,  description: '<em>for 2 hours</em>'
     input name: 'logTrace',       type: 'bool',   title: 'Enable trace logging',             defaultValue: false, description: '<em>for 30 minutes</em>'
+    input name: 'logInfo',        type: 'bool',   title: 'Enable info logging',              defaultValue: true, description: '<em>until manually disabled</em>'
     input name: 'timeoutSlack',   type: 'number', title: 'Timeout slack in seconds',         defaultValue: '30',  description: '<em><b>+</b> for resilience, <b>-</b> reconnect faster</em>'
   }
 }
@@ -79,10 +80,10 @@ private initialize() {
 }
 
 def updated() {
-  log.info 'Preferences saved.'
-  log.info 'debug logging is: ' + logDebug
-  log.info 'description logging is: ' + logDetails
-  log.info 'Abode username: ' + username
+  if (logInfo) log.info 'Preferences saved.'
+  if (logInfo) log.info 'debug logging is: ' + logDebug
+  if (logInfo) log.info 'description logging is: ' + logDetails
+  if (logInfo) log.info 'Abode username: ' + username
   if (!childDevices)
     createIsArmedSwitch()
 
@@ -181,11 +182,11 @@ def armAway() {
 }
 
 def disableDebug(String level) {
-  log.info "Timed elapsed, disabling debug logging"
+  if (logInfo) log.info "Timed elapsed, disabling debug logging"
   device.updateSetting("logDebug", [value: 'false', type: 'bool'])
 }
 def disableTrace(String level) {
-  log.info "Timed elapsed, disabling trace logging"
+  if (logInfo) log.info "Timed elapsed, disabling trace logging"
   device.updateSetting("logTrace", [value: 'false', type: 'bool'])
 }
 
@@ -274,7 +275,7 @@ private clearLoginState() {
 private changeMode(String new_mode) {
   if(new_mode != device.currentValue('gatewayMode')) {
     // Only update area 1 since area is not returned in event messages
-    log.info "Sending request to change Abode gateway mode to ${new_mode}"
+    if (logInfo) log.info "Sending request to change Abode gateway mode to ${new_mode}"
     reply = doHttpRequest('PUT','/api/v1/panel/mode/1/' + new_mode)
     if (reply['area'] == '1') {
       state.localModeChange = new_mode
@@ -286,7 +287,7 @@ private changeMode(String new_mode) {
 
 // Process an update from Abode that the mode has changed
 private updateMode(String new_mode) {
-  log.info 'Abode gateway mode has changed to ' + new_mode
+  if (logInfo) log.info 'Abode gateway mode has changed to ' + new_mode
   sendEvent(name: 'gatewayMode', value: new_mode, descriptionText: 'Gateway mode has changed to ' + new_mode)
 
   // Set isArmed?
@@ -301,11 +302,11 @@ private updateMode(String new_mode) {
       state.remove('localModeChange')
     } else {
       if (targetModeAway && new_mode == 'away') {
-        log.info 'Changing Hubitat mode to ' + targetModeAway
+        if (logInfo) log.info 'Changing Hubitat mode to ' + targetModeAway
         location.setMode(targetModeAway)
       }
       else if (targetModeHome) {
-        log.info 'Changing Hubitat mode to ' + targetModeHome
+        if (logInfo) log.info 'Changing Hubitat mode to ' + targetModeHome
         location.setMode(targetModeHome)
       }
     }
@@ -731,12 +732,12 @@ def parse(String message) {
       message_data = packet_data.substring(1)
       switch(message_type) {
         case '0':
-          log.info 'Abode event socket connected'
+          if (logInfo) log.info 'Abode event socket connected'
           runInMillis(state.webSocketPingInterval, sendPing)
           break
 
         case '1':
-          log.info 'webSocket message = event socket disconnected'
+          if (logInfo) log.info 'webSocket message = event socket disconnected'
           break
 
         case '2':
