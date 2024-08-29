@@ -22,6 +22,7 @@
     capability 'MotionSensor'
     capability 'Sensor'
     //capability 'Refresh'
+    // motion - ENUM ["inactive", "active"]
   } 
  }
 

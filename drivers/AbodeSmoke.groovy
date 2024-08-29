@@ -14,16 +14,16 @@
 
  metadata {
   definition (
-    name: 'Abode Alarm Contact',
+    name: 'Abode Alarm Smoke',
     namespace: 'x86cpu',
     author: 'Eric Meddaugh',
-    importUrl: 'https://raw.githubusercontent.com/x86cpu/hubitat-abode/master/drivers/AbodeContact.groovy',
+    importUrl: 'https://raw.githubusercontent.com/x86cpu/hubitat-abode/master/drivers/AbodeSmoke.groovy',
   ) {
-    capability 'ContactSensor'
+    capability 'SmokeDetector'
     capability 'Sensor'
     //capability 'Refresh'
-    // contact - ENUM ["closed", "open"]
-  }
+    //  smoke - ENUM ["clear", "tested", "detected"]
+  } 
  }
 
 // Hubitat standard methods

@@ -140,6 +140,8 @@ def createChildDevices() {
         if (logDebug) log.debug " Need to add child!"
         if ( reply[cnt]['type'] == 'Door Contact' ) addChildDevice('x86cpu', 'Abode Alarm Contact', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
         if ( reply[cnt]['type'] == 'Occupancy' ) addChildDevice('x86cpu', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
+        if ( reply[cnt]['type'] == 'GLASS' ) addChildDevice('x86cpu', 'Abode Alarm Glass', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
+        if ( reply[cnt]['type'] == 'Smoke Detector' ) addChildDevice('x86cpu', 'Abode Alarm Smoke', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
       }
       if (getChildDevice(reply[cnt]['id'])!= null) {
         childDevice = getChildDevice(reply[cnt]['id'])
@@ -149,6 +151,8 @@ def createChildDevices() {
         if ( reply[cnt]['type'] == 'Door Contact' && reply[cnt]['status'] == 'Opened' ) childDevice.sendEvent(name: "contact", value: "open",   descriptionText: "${childDevice.displayName} is open")
         if ( reply[cnt]['type'] == 'Occupancy' && reply[cnt]['statuses']['motion'] == '0' ) childDevice.sendEvent(name: "motion", value: "inactive", descriptionText: "${childDevice.displayName} is clear")
         if ( reply[cnt]['type'] == 'Occupancy' && reply[cnt]['statuses']['motion'] == '1' ) childDevice.sendEvent(name: "motion", value: "active",   descriptionText: "${childDevice.displayName} detected motion")
+        if ( reply[cnt]['type'] == 'GLASS' ) childDevice.sendEvent(name: "shock", value: "clear",   descriptionText: "${childDevice.displayName} clear")
+        if ( reply[cnt]['type'] == 'Smoke Detector' ) childDevice.sendEvent(name: "smoke", value: "clear",   descriptionText: "${childDevice.displayName} clear")
       }
       cnt++
     }

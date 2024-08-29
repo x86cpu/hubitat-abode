@@ -14,16 +14,16 @@
 
  metadata {
   definition (
-    name: 'Abode Alarm Contact',
+    name: 'Abode Alarm Glass',
     namespace: 'x86cpu',
     author: 'Eric Meddaugh',
-    importUrl: 'https://raw.githubusercontent.com/x86cpu/hubitat-abode/master/drivers/AbodeContact.groovy',
+    importUrl: 'https://raw.githubusercontent.com/x86cpu/hubitat-abode/master/drivers/AbodeGlass.groovy',
   ) {
-    capability 'ContactSensor'
+    capability 'ShockSensor'
     capability 'Sensor'
     //capability 'Refresh'
-    // contact - ENUM ["closed", "open"]
-  }
+    // shock - ENUM ["clear", "detected"]
+  } 
  }
 
 // Hubitat standard methods
