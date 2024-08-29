@@ -1,19 +1,44 @@
 {
-  "packageName": "Abode Alarm",
+  "packageName": "Abode Alarm 2024",
+  "author": "Eric Meddaugh",
+  "version": "2.0.1",
   "minimumHEVersion": "2.1.0",
-  "author": "Jo Rhett",
-  "version": "1.0.1",
-  "dateReleased": "2020-07-18",
-  "licenseFile": "https://github.com/jorhett/hubitat-abode/blob/master/LICENSE",
-  "releaseNotes": "https://github.com/jorhett/hubitat-abode/blob/master/CHANGELOG.md",
-  "apps" : [],
-  "drivers" : [
+  "dateReleased": "2024-08-21",
+  "drivers": [
     {
-      "id" : "a3f88dd8-474c-4fe7-a226-521f44638d87",
+      "id": "990855d1-1abe-4315-97a6-7336c006de5b",
       "name": "Abode Alarm",
-      "namespace": "jorhett",
-      "location": "https://raw.githubusercontent.com/jorhett/hubitat-abode/v1.0.1/drivers/AbodeAlarm.groovy",
+      "namespace": "x86cpu",
+      "location": "https://raw.githubusercontent.com/x86cpu/hubitat-abode/master/drivers/AbodeAlarm.groovy",
       "required": true
+    },
+    {
+      "id": "c90de177-46b2-4b18-9f5d-e374b7e1b6b0",
+      "name": "Abode Alarm Contact",
+      "namespace": "x86cpu",
+      "location": "https://raw.githubusercontent.com/x86cpu/hubitat-abode/master/drivers/AbodeContact.groovy",
+      "required": false
+    },
+    {
+      "id": "cc44a4bc-ed47-405e-8cd5-a76f4f44f82a",
+      "name": "Abode Alarm Glass",
+      "namespace": "x86cpu",
+      "location": "https://raw.githubusercontent.com/x86cpu/hubitat-abode/master/drivers/AbodeGlass.groovy",
+      "required": false
+    },
+    {
+      "id": "d17f16eb-4cce-446e-b305-cec30f0f3356",
+      "name": "Abode Alarm Motion",
+      "namespace": "x86cpu",
+      "location": "https://raw.githubusercontent.com/x86cpu/hubitat-abode/master/drivers/AbodeMotion.groovy",
+      "required": false
+    },
+    {
+      "id": "260adf54-f98a-421d-bfaf-5d889639a47e",
+      "name": "Abode Alarm Smoke",
+      "namespace": "x86cpu",
+      "location": "https://raw.githubusercontent.com/x86cpu/hubitat-abode/master/drivers/AbodeSmoke.groovy",
+      "required": false
     }
   ]
 }
