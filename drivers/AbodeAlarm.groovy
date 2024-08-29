@@ -140,6 +140,7 @@ def createChildDevices() {
         if (logDebug) log.debug " Need to add child!"
         if ( reply[cnt]['type'] == 'Door Contact' ) addChildDevice('x86cpu', 'Abode Alarm Contact', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
         if ( reply[cnt]['type'] == 'Occupancy' ) addChildDevice('x86cpu', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
+        if ( reply[cnt]['type'] == 'Motion Sensor' ) addChildDevice('x86cpu', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
         if ( reply[cnt]['type'] == 'GLASS' ) addChildDevice('x86cpu', 'Abode Alarm Glass', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
         if ( reply[cnt]['type'] == 'Smoke Detector' ) addChildDevice('x86cpu', 'Abode Alarm Smoke', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
       }
@@ -151,6 +152,7 @@ def createChildDevices() {
         if ( reply[cnt]['type'] == 'Door Contact' && reply[cnt]['status'] == 'Opened' ) childDevice.sendEvent(name: "contact", value: "open",   descriptionText: "${childDevice.displayName} is open")
         if ( reply[cnt]['type'] == 'Occupancy' && reply[cnt]['statuses']['motion'] == '0' ) childDevice.sendEvent(name: "motion", value: "inactive", descriptionText: "${childDevice.displayName} is clear")
         if ( reply[cnt]['type'] == 'Occupancy' && reply[cnt]['statuses']['motion'] == '1' ) childDevice.sendEvent(name: "motion", value: "active",   descriptionText: "${childDevice.displayName} detected motion")
+        if ( reply[cnt]['type'] == 'Motion Sensor' ) childDevice.sendEvent(name: "motion", value: "inactive", descriptionText: "${childDevice.displayName} is clear")
         if ( reply[cnt]['type'] == 'GLASS' ) childDevice.sendEvent(name: "shock", value: "clear",   descriptionText: "${childDevice.displayName} clear")
         if ( reply[cnt]['type'] == 'Smoke Detector' ) childDevice.sendEvent(name: "smoke", value: "clear",   descriptionText: "${childDevice.displayName} clear")
       }
@@ -671,6 +673,8 @@ def parseEvent(String event_text) {
       case ~/^device\.update.*/:
         reply = doHttpRequest('GET','/api/v1/devices/'+message)
         if (logTrace) log.trace "reply: ${reply}"
+
+// Occupancy sensor
         if ( getChildDevice(reply[0]['id']) != null && reply[0]['type'] == 'Occupancy' ) {
           childDevice=getChildDevice(reply[0]['id'])
           if (logTrace) log.trace "motion: "+reply[0]['statuses']['motion']
@@ -686,6 +690,7 @@ def parseEvent(String event_text) {
           }
           sendEnabledEvents(alert_value, message, "Occupancy")
         }
+
         break
       default:
         if (logDebug) log.debug "Ignoring event ${event_class} ${message}"
