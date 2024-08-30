@@ -1,13 +1,13 @@
 {
   "packageName": "Abode Alarm 2024",
   "author": "Eric Meddaugh",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "minimumHEVersion": "2.1.0",
   "dateReleased": "2024-08-21",
   "drivers": [
     {
       "id": "990855d1-1abe-4315-97a6-7336c006de5b",
-      "name": "Abode Alarm",
+      "name": "Abode Alarm 2024",
       "namespace": "x86cpu",
       "location": "https://raw.githubusercontent.com/x86cpu/hubitat-abode/master/drivers/AbodeAlarm.groovy",
       "required": true
