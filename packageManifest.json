@@ -1,7 +1,7 @@
 {
   "packageName": "Abode Alarm 2024",
   "author": "Eric Meddaugh",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "minimumHEVersion": "2.1.0",
   "dateReleased": "2024-08-21",
   "drivers": [
@@ -38,6 +38,13 @@
       "name": "Abode Alarm Smoke",
       "namespace": "x86cpu",
       "location": "https://raw.githubusercontent.com/x86cpu/hubitat-abode/master/drivers/AbodeSmoke.groovy",
+      "required": false
+    },
+    {
+      "id": "f22e3b56-c6ad-40b9-a4bb-0b768edb2a72",
+      "name": "Abode Alarm MultiSensor",
+      "namespace": "x86cpu",
+      "location": "https://raw.githubusercontent.com/x86cpu/hubitat-abode/master/drivers/AbodeMultiSensor.groovy",
       "required": false
     }
   ]
