@@ -609,6 +609,9 @@ def sendEnabledEvents(
 
 def parseEvent(String event_text) {
   twovalue = event_text =~ /^\["com\.goabode\.([\w+\.]+)",(.*)\]$/
+  a = 0
+  b = 0
+  temperature = 0
   if (twovalue.find()) {
     event_class = twovalue[0][1]
     event_data = twovalue[0][2]
@@ -716,7 +719,8 @@ def parseEvent(String event_text) {
 // humidity: humidity:20 %
           if ( reply[0]['statuses']['humidity'] != null ) {
              if (logTrace) log.trace "humidity: "+reply[0]['statuses']['humidity']
-             def (a,b) = reply[0]['statuses']['humidity'].split(' ')
+             (a,b) = reply[0]['statuses']['humidity'].split(' ')
+             if (logDebug) log.debug "a = " + a + " AND b = " + b
              if ( a >= 0  && b == '%' ) {
                childDevice.sendEvent(name: "humidity", value: a, unit: '% RH', descriptionText: "${childDevice.displayName} humidity is "+ a + "%")
                alert_value = reply[0]['name'] + "humidity =" + a
@@ -727,7 +731,8 @@ def parseEvent(String event_text) {
 // temp: temp:32.1, temperature:90 °F
           if ( reply[0]['statuses']['temp'] != null ) {
              if (logTrace) log.trace "temp: "+reply[0]['statuses']['temp']
-             def temperature = reply[0]['statuses']['temp']
+             temperature = reply[0]['statuses']['temp']
+             if (logDebug) log.debug "location.temperatureScale: " + location.temperatureScale
              if ( location.temperatureScale == "F" ) {
                 temperature = (reply[0]['statuses']['temp'] * 1.8) + 32
              }
@@ -739,7 +744,8 @@ def parseEvent(String event_text) {
 // lux:  lux:0 lx
           if ( reply[0]['statuses']['lux'] != null ) {
              if (logTrace) log.trace "lux: "+reply[0]['statuses']['lux']
-             def (a,b) = reply[0]['statuses']['lux'].split(' ')
+             (a,b) = reply[0]['statuses']['lux'].split(' ')
+             if (logDebug) log.debug "a = " + a + " AND b = " + b
              if ( a >= 0  && b == 'lx' ) {
                childDevice.sendEvent(name: "illuminance", value: a, unit: 'lx', descriptionText: "${childDevice.displayName} lux is "+ a)
                alert_value = reply[0]['name'] + "lux =" + a
