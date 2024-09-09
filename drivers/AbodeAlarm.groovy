@@ -127,6 +127,7 @@ def createChildDevices() {
   if (saveDevices && saveContacts) {
     reply = doHttpRequest('GET','/api/v1/devices')
     cnt=0
+    added=0
     while (reply[cnt] != null ) {
       if (logTrace) log.trace("reply[$cnt]: "+ reply[cnt])
       if (logTrace) log.trace("reply[$cnt][id]: "+ reply[cnt]['id'])
@@ -140,11 +141,14 @@ def createChildDevices() {
         if (logDebug) log.debug " Need to add child!"
         if ( reply[cnt]['type'] == 'Door Contact' ) addChildDevice('x86cpu', 'Abode Alarm Contact', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
         if ( reply[cnt]['type'] == 'Occupancy' ) addChildDevice('x86cpu', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
-        if ( reply[cnt]['type'] == 'Motion Sensor' ) addChildDevice('x86cpu', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
         if ( reply[cnt]['type'] == 'GLASS' ) addChildDevice('x86cpu', 'Abode Alarm Glass', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
         if ( reply[cnt]['type'] == 'Smoke Detector' ) addChildDevice('x86cpu', 'Abode Alarm Smoke', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
+        if ( reply[cnt]['type'] == 'LM' ) addChildDevice('x86cpu', 'Abode Alarm MultiSensor', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
+//
+        if ( reply[cnt]['type'] == 'Motion Sensor' ) addChildDevice('x86cpu', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
+        added=0
       }
-      if (getChildDevice(reply[cnt]['id'])!= null) {
+      if (getChildDevice(reply[cnt]['id'])!= null && added == 1) {
         childDevice = getChildDevice(reply[cnt]['id'])
         if ( childDevice.getName() != 'Abode: '+reply[cnt]['name'] ) childDevice.setName('Abode: '+reply[cnt]['name'])
         if (logDebug) log.debug "setting child state: " + reply[cnt]['status']
@@ -152,9 +156,18 @@ def createChildDevices() {
         if ( reply[cnt]['type'] == 'Door Contact' && reply[cnt]['status'] == 'Opened' ) childDevice.sendEvent(name: "contact", value: "open",   descriptionText: "${childDevice.displayName} is open")
         if ( reply[cnt]['type'] == 'Occupancy' && reply[cnt]['statuses']['motion'] == '0' ) childDevice.sendEvent(name: "motion", value: "inactive", descriptionText: "${childDevice.displayName} is clear")
         if ( reply[cnt]['type'] == 'Occupancy' && reply[cnt]['statuses']['motion'] == '1' ) childDevice.sendEvent(name: "motion", value: "active",   descriptionText: "${childDevice.displayName} detected motion")
-        if ( reply[cnt]['type'] == 'Motion Sensor' ) childDevice.sendEvent(name: "motion", value: "inactive", descriptionText: "${childDevice.displayName} is clear")
         if ( reply[cnt]['type'] == 'GLASS' ) childDevice.sendEvent(name: "shock", value: "clear",   descriptionText: "${childDevice.displayName} clear")
         if ( reply[cnt]['type'] == 'Smoke Detector' ) childDevice.sendEvent(name: "smoke", value: "clear",   descriptionText: "${childDevice.displayName} clear")
+
+        if ( reply[cnt]['type'] == 'LM' ) childDevice.sendEvent(name: "humidity", value: 0, unit: '% RH',  descriptionText: "${childDevice.displayName} humidity is NEW")
+        if ( reply[cnt]['type'] == 'LM' ) childDevice.sendEvent(name: "temperature", value: 0, unit: "°${location.temperatureScale}",  descriptionText: "${childDevice.displayName} temperature is NEW")
+        if ( reply[cnt]['type'] == 'LM' ) childDevice.sendEvent(name: "illuminance", value: 0, unit: 'lx',  descriptionText: "${childDevice.displayName} lx is NEW")
+
+             childDevice.sendEvent(name: 'temperature', value: temperature.round(2), unit:"°${location.temperatureScale}", descriptionText: "${childDevice.displayName} temperature is "+ temperature + "°${location.temperatureScale}")
+               childDevice.sendEvent(name: "illuminance", value: a, unit: 'lx', descriptionText: "${childDevice.displayName} lux is "+ a)
+
+//
+        if ( reply[cnt]['type'] == 'Motion Sensor' ) childDevice.sendEvent(name: "motion", value: "inactive", descriptionText: "${childDevice.displayName} is clear")
       }
       cnt++
     }
@@ -573,6 +586,11 @@ def sendEnabledEvents(
         sendEvent(name: 'gatewayTimeline', value: alert_value, descriptionText: message, type: alert_type)
       break
 
+    case ~/LM/:
+      if (saveContacts)
+        sendEvent(name: 'gatewayTimeline', value: alert_value, descriptionText: message, type: alert_type)
+      break
+
     case ~/Occupancy/:
       if (saveContacts)
         sendEvent(name: 'gatewayTimeline', value: alert_value, descriptionText: message, type: alert_type)
@@ -691,6 +709,46 @@ def parseEvent(String event_text) {
           sendEnabledEvents(alert_value, message, "Occupancy")
         }
 
+// LM (Multi Sensor)
+        if ( getChildDevice(reply[0]['id']) != null && reply[0]['type'] == 'LM' ) {
+          childDevice=getChildDevice(reply[0]['id'])
+
+// humidity: humidity:20 %
+          if ( reply[0]['statuses']['humidity'] != null ) {
+             if (logTrace) log.trace "humidity: "+reply[0]['statuses']['humidity']
+             def (a,b) = reply[0]['statuses']['humidity'].split(' ')
+             if ( a >= 0  && b == '%' ) {
+               childDevice.sendEvent(name: "humidity", value: a, unit: '% RH', descriptionText: "${childDevice.displayName} humidity is "+ a + "%")
+               alert_value = reply[0]['name'] + "humidity =" + a
+               message = reply[0]['name'] + " humidity " + a + "%"
+               sendEnabledEvents(alert_value, message, "LM")
+             }
+          }
+// temp: temp:32.1, temperature:90 °F
+          if ( reply[0]['statuses']['temp'] != null ) {
+             if (logTrace) log.trace "temp: "+reply[0]['statuses']['temp']
+             def temperature = reply[0]['statuses']['temp']
+             if ( location.temperatureScale == "F" ) {
+                temperature = (reply[0]['statuses']['temp'] * 1.8) + 32
+             }
+             childDevice.sendEvent(name: 'temperature', value: temperature.round(2), unit:"°${location.temperatureScale}", descriptionText: "${childDevice.displayName} temperature is "+ temperature + "°${location.temperatureScale}")
+             alert_value = reply[0]['name'] + "temperature =" + temperature
+             message = reply[0]['name'] + " temperature " + temperature + "°${location.temperatureScale}"
+             sendEnabledEvents(alert_value, message, "LM")
+          }
+// lux:  lux:0 lx
+          if ( reply[0]['statuses']['lux'] != null ) {
+             if (logTrace) log.trace "lux: "+reply[0]['statuses']['lux']
+             def (a,b) = reply[0]['statuses']['lux'].split(' ')
+             if ( a >= 0  && b == 'lx' ) {
+               childDevice.sendEvent(name: "illuminance", value: a, unit: 'lx', descriptionText: "${childDevice.displayName} lux is "+ a)
+               alert_value = reply[0]['name'] + "lux =" + a
+               message = reply[0]['name'] + " lux " + a
+               sendEnabledEvents(alert_value, message, "LM")
+             }
+          }
+
+        }
         break
       default:
         if (logDebug) log.debug "Ignoring event ${event_class} ${message}"
