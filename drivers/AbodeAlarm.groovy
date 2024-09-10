@@ -1,5 +1,5 @@
 /*
- * Abode Alarm
+ * Abode Alarm 2024
  *
  * Copyright 2020 Jo Rhett.  All Rights Reserved
  * Copyright 2024 Eric Meddaugh.  All Rights Reserved
@@ -611,7 +611,7 @@ def parseEvent(String event_text) {
   twovalue = event_text =~ /^\["com\.goabode\.([\w+\.]+)",(.*)\]$/
   a = 0
   b = 0
-  temperature = 0
+  float temperature = 0.0
   if (twovalue.find()) {
     event_class = twovalue[0][1]
     event_data = twovalue[0][2]
@@ -657,6 +657,7 @@ def parseEvent(String event_text) {
 
       case ~/^gateway\.timeline.*/:
         event_type = json_data.event_type
+        is_alarm = json_data.event_type
         message = json_data.event_name
         user_info = formatEventUser(json_data)
 
@@ -690,6 +691,8 @@ def parseEvent(String event_text) {
             }
           }
         }
+// Panic Alarm
+        if ( is_alarm == 1 ) logDebug log.debug "Alarm event detected"
         break
       case ~/^device\.update.*/:
         reply = doHttpRequest('GET','/api/v1/devices/'+message)
@@ -716,6 +719,18 @@ def parseEvent(String event_text) {
         if ( getChildDevice(reply[0]['id']) != null && reply[0]['type'] == 'LM' ) {
           childDevice=getChildDevice(reply[0]['id'])
 
+// debug for now
+          if ( logTrace ) {
+             if ( reply[0]['statuses']['humidity'] != null ) {
+               log.trace "x86cpu DEBUG: humidity: "+reply[0]['statuses']['humidity']
+             }
+             if ( reply[0]['statuses']['temp'] != null ) {
+               log.trace "x86cpu DEBUG: temp: "+reply[0]['statuses']['temp']
+             }
+             if ( reply[0]['statuses']['lux'] != null ) {
+               log.trace "x86cpu DEBUG: lux: "+reply[0]['statuses']['lux']
+             }
+          }
 // humidity: humidity:20 %
           if ( reply[0]['statuses']['humidity'] != null ) {
              if (logTrace) log.trace "humidity: "+reply[0]['statuses']['humidity']
@@ -731,11 +746,12 @@ def parseEvent(String event_text) {
 // temp: temp:32.1, temperature:90 °F
           if ( reply[0]['statuses']['temp'] != null ) {
              if (logTrace) log.trace "temp: "+reply[0]['statuses']['temp']
-             temperature = reply[0]['statuses']['temp']
-             if (logDebug) log.debug "location.temperatureScale: " + location.temperatureScale
+             temperature = Float.reply[0]['statuses']['temp']
+             if (logDebug) log.debug temperature + " location.temperatureScale: " + location.temperatureScale
              if ( location.temperatureScale == "F" ) {
                 temperature = (reply[0]['statuses']['temp'] * 1.8) + 32
              }
+             if (logDebug) log.debug temperature + "-2 location.temperatureScale: " + location.temperatureScale
              childDevice.sendEvent(name: 'temperature', value: temperature.round(2), unit:"°${location.temperatureScale}", descriptionText: "${childDevice.displayName} temperature is "+ temperature + "°${location.temperatureScale}")
              alert_value = reply[0]['name'] + "temperature =" + temperature
              message = reply[0]['name'] + " temperature " + temperature + "°${location.temperatureScale}"
