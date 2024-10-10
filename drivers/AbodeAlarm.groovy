@@ -163,9 +163,6 @@ def createChildDevices() {
         if ( reply[cnt]['type'] == 'LM' ) childDevice.sendEvent(name: "temperature", value: 0, unit: "°${location.temperatureScale}",  descriptionText: "${childDevice.displayName} temperature is NEW")
         if ( reply[cnt]['type'] == 'LM' ) childDevice.sendEvent(name: "illuminance", value: 0, unit: 'lx',  descriptionText: "${childDevice.displayName} lx is NEW")
 
-             childDevice.sendEvent(name: 'temperature', value: temperature.round(2), unit:"°${location.temperatureScale}", descriptionText: "${childDevice.displayName} temperature is "+ temperature + "°${location.temperatureScale}")
-               childDevice.sendEvent(name: "illuminance", value: a, unit: 'lx', descriptionText: "${childDevice.displayName} lux is "+ a)
-
 //
         if ( reply[cnt]['type'] == 'Motion Sensor' ) childDevice.sendEvent(name: "motion", value: "inactive", descriptionText: "${childDevice.displayName} is clear")
       }
@@ -581,7 +578,7 @@ def sendEnabledEvents(
       break
 
     // User choice to log
-    case ~/.* Contact/:     // or event code 5100 open, 5101 closed, 5110 unlocked, 5111 locked
+    case ~/.* Contact/:
       if (saveContacts)
         sendEvent(name: 'gatewayTimeline', value: alert_value, descriptionText: message, type: alert_type)
       break
@@ -692,67 +689,67 @@ def parseEvent(String event_text) {
           }
         }
 // Panic Alarm
-        if ( is_alarm == 1 ) logDebug log.debug "Alarm event detected"
+        if ( is_alarm == 1 ) log.debug "Alarm event detected"
         break
       case ~/^device\.update.*/:
         reply = doHttpRequest('GET','/api/v1/devices/'+message)
         if (logTrace) log.trace "reply: ${reply}"
+// GLASS -- Log event to capture
+        if ( getChildDevice(reply[0]['id']) != null && reply[0]['type'] == 'GLASS' ) {
+          log.trace "reply: ${reply}"
+        }
+// Smoke -- Log event to capture
+        if ( getChildDevice(reply[0]['id']) != null && reply[0]['type'] == 'Smoke Detector' ) {
+          log.trace "reply: ${reply}"
+        }
 
 // Occupancy sensor
         if ( getChildDevice(reply[0]['id']) != null && reply[0]['type'] == 'Occupancy' ) {
+          sub = -1
+          if ( reply[0]['sub_type'] != null ) sub = reply[0]['sub_type'].toInteger()
           childDevice=getChildDevice(reply[0]['id'])
-          if (logTrace) log.trace "motion: "+reply[0]['statuses']['motion']
-          if ( reply[0]['statuses']['motion'] == '0' ) {
+          if (logTrace) log.trace "motion: "+reply[0]['statuses']['motion'] + " sub_type: " + sub
+          if ( reply[0]['statuses']['motion'].toString() == '0' ) {
             childDevice.sendEvent(name: "motion", value: "inactive", descriptionText: "${childDevice.displayName} is clear")
             alert_value = reply[0]['name'] + "=inactive"
             message = reply[0]['name'] + " inactive"
+            sendEnabledEvents(alert_value, message, "Occupancy")
           }
-          if ( reply[0]['statuses']['motion'] == '1' ) {
+          if ( reply[0]['statuses']['motion'].toString() == '1' ) {
             childDevice.sendEvent(name: "motion", value: "active",   descriptionText: "${childDevice.displayName} detected motion")
             alert_value = reply[0]['name'] + "=active"
             message = reply[0]['name'] + " active"
+            sendEnabledEvents(alert_value, message, "Occupancy")
+            if ( sub == 0 ) {
+              runIn(60,"motionOff", [data: ["cid": reply[0]['id']]] )
+            }
           }
-          sendEnabledEvents(alert_value, message, "Occupancy")
         }
 
 // LM (Multi Sensor)
         if ( getChildDevice(reply[0]['id']) != null && reply[0]['type'] == 'LM' ) {
           childDevice=getChildDevice(reply[0]['id'])
-
-// debug for now
-          if ( logTrace ) {
-             if ( reply[0]['statuses']['humidity'] != null ) {
-               log.trace "x86cpu DEBUG: humidity: "+reply[0]['statuses']['humidity']
-             }
-             if ( reply[0]['statuses']['temp'] != null ) {
-               log.trace "x86cpu DEBUG: temp: "+reply[0]['statuses']['temp']
-             }
-             if ( reply[0]['statuses']['lux'] != null ) {
-               log.trace "x86cpu DEBUG: lux: "+reply[0]['statuses']['lux']
-             }
-          }
 // humidity: humidity:20 %
           if ( reply[0]['statuses']['humidity'] != null ) {
              if (logTrace) log.trace "humidity: "+reply[0]['statuses']['humidity']
-             (a,b) = reply[0]['statuses']['humidity'].split(' ')
-             if (logDebug) log.debug "a = " + a + " AND b = " + b
-             if ( a >= 0  && b == '%' ) {
-               childDevice.sendEvent(name: "humidity", value: a, unit: '% RH', descriptionText: "${childDevice.displayName} humidity is "+ a + "%")
+             tmp=reply[0]['statuses']['humidity'].toString()
+             (a,b) = reply[0]['statuses']['humidity'].toString().split(' ')
+             if ( a.toInteger() >= 0  && b == "%" ) {
+               childDevice.sendEvent(name: "humidity", value: a.toInteger(), unit: '% RH', descriptionText: "${childDevice.displayName} humidity is "+ a + "%")
                alert_value = reply[0]['name'] + "humidity =" + a
                message = reply[0]['name'] + " humidity " + a + "%"
                sendEnabledEvents(alert_value, message, "LM")
              }
           }
 // temp: temp:32.1, temperature:90 °F
+// Take "temp" in C, and save it as whatever location we are in.
           if ( reply[0]['statuses']['temp'] != null ) {
              if (logTrace) log.trace "temp: "+reply[0]['statuses']['temp']
-             temperature = Float.reply[0]['statuses']['temp']
-             if (logDebug) log.debug temperature + " location.temperatureScale: " + location.temperatureScale
+             temperature = reply[0]['statuses']['temp'].toFloat()
              if ( location.temperatureScale == "F" ) {
-                temperature = (reply[0]['statuses']['temp'] * 1.8) + 32
+                temperature = (reply[0]['statuses']['temp'].toFloat() * 1.8) + 32
              }
-             if (logDebug) log.debug temperature + "-2 location.temperatureScale: " + location.temperatureScale
-             childDevice.sendEvent(name: 'temperature', value: temperature.round(2), unit:"°${location.temperatureScale}", descriptionText: "${childDevice.displayName} temperature is "+ temperature + "°${location.temperatureScale}")
+             childDevice.sendEvent(name: 'temperature', value: temperature.round(1), unit:"°${location.temperatureScale}", descriptionText: "${childDevice.displayName} temperature is "+ temperature + "°${location.temperatureScale}")
              alert_value = reply[0]['name'] + "temperature =" + temperature
              message = reply[0]['name'] + " temperature " + temperature + "°${location.temperatureScale}"
              sendEnabledEvents(alert_value, message, "LM")
@@ -760,8 +757,7 @@ def parseEvent(String event_text) {
 // lux:  lux:0 lx
           if ( reply[0]['statuses']['lux'] != null ) {
              if (logTrace) log.trace "lux: "+reply[0]['statuses']['lux']
-             (a,b) = reply[0]['statuses']['lux'].split(' ')
-             if (logDebug) log.debug "a = " + a + " AND b = " + b
+             (a,b) = reply[0]['statuses']['lux'].toString().split(' ')
              if ( a >= 0  && b == 'lx' ) {
                childDevice.sendEvent(name: "illuminance", value: a, unit: 'lx', descriptionText: "${childDevice.displayName} lux is "+ a)
                alert_value = reply[0]['name'] + "lux =" + a
@@ -779,6 +775,18 @@ def parseEvent(String event_text) {
   } else {
     log.warn "Unparseable Abode event message: ${event_text}"
   }
+}
+
+private motionOff(data) {
+   log.debug "motionOff parameter: $data"
+   log.debug "cid : " + data.cid
+   if ( getChildDevice(cid) != null ) {
+     childDevice=getChildDevice(cid)
+     childDevice.sendEvent(name: "motion", value: "inactive", descriptionText: "${childDevice.displayName} is clear")
+     alert_value = childDevice.displayName + "=inactive"
+     message = childDevice.displayName + " inactive"
+     sendEnabledEvents(alert_value, message, "Occupancy")
+   }
 }
 
 // Hubitat required method: This method is called with any incoming messages from the web socket server
