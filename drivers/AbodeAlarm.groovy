@@ -69,6 +69,8 @@ def installed() {
   log.debug 'installed'
   device.updateSetting('showLogin', [value: true, type: 'bool'])
   device.updateSetting('saveDevices', [value: false, type: 'bool'])
+  device.updateSetting('mfa_code', [value: '', type: 'text'])
+  device.updateSetting('mfa_seed', [value: '', type: 'text'])
   initialize()
   if (!childDevices)
     createIsArmedSwitch()
@@ -90,6 +92,8 @@ def updated() {
   // Disable high levels of logging after time
   if (logTrace) runIn(1800,disableTrace)
   if (logDebug) runIn(7200,disableDebug)
+  if ( mfa_code == null ) device.updateSetting('mfa_code', [value: '', type: 'text'])
+  if ( mfa_seed == null ) device.updateSetting('mfa_seed', [value: '', type: 'text'])
 
   // Reasons we should attempt login again
   if (
