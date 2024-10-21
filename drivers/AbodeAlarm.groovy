@@ -55,6 +55,7 @@ metadata {
     input name: 'saveGeofence',   type: 'bool',   title: 'Save Abode geofence events',       defaultValue: false, description: '<em>...to Hubitat Events</em>'
     input name: 'saveAutomation', type: 'bool',   title: 'Save CUE Automation actions',      defaultValue: false, description: '<em>...to Hubitat Events</em>'
     input name: 'saveDevices',    type: 'bool',   title: 'Create child devices',             defaultValue: false, description: '<em>...to Hubitat Devices</em>'
+    input name: 'deviceComponent',type: 'bool',   title: 'Mark child devices as Components', defaultValue: true,  description: '<em>...Prevents changing or deletion</em>'
 
     input name: 'showLogin',      type: 'bool',   title: 'Show login fields',                defaultValue: true,  description: '<em>Show login fields</em>', submitOnChange: true
     input name: 'logDebug',       type: 'bool',   title: 'Enable debug logging',             defaultValue: true,  description: '<em>for 2 hours</em>'
@@ -69,11 +70,11 @@ def installed() {
   log.debug 'installed'
   device.updateSetting('showLogin', [value: true, type: 'bool'])
   device.updateSetting('saveDevices', [value: false, type: 'bool'])
+  device.updateSetting('deviceComponent', [value: true, type: 'bool'])
   device.updateSetting('mfa_code', [value: '', type: 'text'])
   device.updateSetting('mfa_seed', [value: '', type: 'text'])
   initialize()
-  if (!childDevices)
-    createIsArmedSwitch()
+  createIsArmedSwitch()
 }
 
 private initialize() {
@@ -112,13 +113,12 @@ def updated() {
   device.updateSetting('mfa_code', [value: '', type: 'text'])
   createChildDevices()
   if (logDebug) {
-    if ( !mfa_seed.isEmpty() ) state.HEX = base32_decode(mfa_seed)
-    if ( !mfa_seed.isEmpty() ) state.MFA = generateTOTP1(mfa_seed)
+    if ( mfa_seed != null && !mfa_seed.isEmpty() ) state.HEX = base32_decode(mfa_seed)
+    if ( mfa_seed != null && !mfa_seed.isEmpty() ) state.MFA = generateTOTP1(mfa_seed)
   } else {
     state.remove("HEX")
     state.remove("MFA")
   }
-
 }
 
 def createChildDevices() {
@@ -140,17 +140,26 @@ def createChildDevices() {
       if (logTrace) log.trace("reply[$cnt][status]: "+ reply[cnt]['status'])
       if ( getChildDevice(reply[cnt]['id']) != null ) {
         if (logDebug) log.debug "Found child"
+        //childDevice = getChildDevice(reply[cnt]['id'])
       }
       if (getChildDevice(reply[cnt]['id']) == null) {
         if (logDebug) log.debug " Need to add child!"
-        if ( reply[cnt]['type'] == 'Door Contact' ) addChildDevice('x86cpu', 'Abode Alarm Contact', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
-        if ( reply[cnt]['type'] == 'Occupancy' ) addChildDevice('x86cpu', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
-        if ( reply[cnt]['type'] == 'GLASS' ) addChildDevice('x86cpu', 'Abode Alarm Glass', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
-        if ( reply[cnt]['type'] == 'Smoke Detector' ) addChildDevice('x86cpu', 'Abode Alarm Smoke', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
-        if ( reply[cnt]['type'] == 'LM' ) addChildDevice('x86cpu', 'Abode Alarm MultiSensor', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
-//
-        if ( reply[cnt]['type'] == 'Motion Sensor' ) addChildDevice('x86cpu', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
-        added=0
+        if ( deviceComponent ) {
+          if ( reply[cnt]['type'] == 'Door Contact' ) addChildDevice('x86cpu', 'Abode Alarm Contact', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
+          if ( reply[cnt]['type'] == 'Occupancy' ) addChildDevice('x86cpu', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
+          if ( reply[cnt]['type'] == 'GLASS' ) addChildDevice('x86cpu', 'Abode Alarm Glass', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
+          if ( reply[cnt]['type'] == 'Smoke Detector' ) addChildDevice('x86cpu', 'Abode Alarm Smoke', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
+          if ( reply[cnt]['type'] == 'LM' ) addChildDevice('x86cpu', 'Abode Alarm MultiSensor', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
+          if ( reply[cnt]['type'] == 'Motion Sensor' ) addChildDevice('x86cpu', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
+        } else {
+          if ( reply[cnt]['type'] == 'Door Contact' ) addChildDevice('x86cpu', 'Abode Alarm Contact', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name']])
+          if ( reply[cnt]['type'] == 'Occupancy' ) addChildDevice('x86cpu', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name']])
+          if ( reply[cnt]['type'] == 'GLASS' ) addChildDevice('x86cpu', 'Abode Alarm Glass', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name']])
+          if ( reply[cnt]['type'] == 'Smoke Detector' ) addChildDevice('x86cpu', 'Abode Alarm Smoke', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name']])
+          if ( reply[cnt]['type'] == 'LM' ) addChildDevice('x86cpu', 'Abode Alarm MultiSensor', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name']])
+          if ( reply[cnt]['type'] == 'Motion Sensor' ) addChildDevice('x86cpu', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name']])
+        }
+        added=1
       }
       if (getChildDevice(reply[cnt]['id'])!= null && added == 1) {
         childDevice = getChildDevice(reply[cnt]['id'])
@@ -203,11 +212,11 @@ def armAway() {
 
 def disableDebug(String level) {
   if (logInfo) log.info "Timed elapsed, disabling debug logging"
-  device.updateSetting("logDebug", [value: 'false', type: 'bool'])
+  device.updateSetting("logDebug", [value: false, type: 'bool'])
 }
 def disableTrace(String level) {
   if (logInfo) log.info "Timed elapsed, disabling trace logging"
-  device.updateSetting("logTrace", [value: 'false', type: 'bool'])
+  device.updateSetting("logTrace", [value: false, type: 'bool'])
 }
 
 // isArmed Child Switch
@@ -226,7 +235,7 @@ private driverUserAgent() {
 
 private login() {
   if(state.uuid == null) initialize()
-  if ( !mfa_seed.isEmpty() && mfa_used ) mfa_code = generateTOTP1(mfa_seed)
+  if ( mfa_seed != null && !mfa_seed.isEmpty() && mfa_used ) mfa_code = generateTOTP1(mfa_seed)
   input_values = [
     id: username,
     password: password,
@@ -259,7 +268,7 @@ private validateSession() {
       sendEvent(name: 'lastResult', value: 'Not logged in', descriptionText: 'Attempted transaction when not logged in')
       clearLoginState()
     }
-    if ( ( !mfa_seed.isEmpty() && mfa_used ) || ( mfa_seed.isEmpty && !mfa_used ) ) { // Attempt login if we have a mfa_seed saved or not using mfa
+    if ( ( mfa_seed != null && !mfa_seed.isEmpty() && mfa_used ) || !mfa_used ) { // Attempt login if we have a mfa_seed saved or not using mfa
       login()
       user = getUser()
       logged_in = user?.id ? true : false
@@ -460,6 +469,7 @@ private doHttpRequest(String method, String path, Map body = [:]) {
     }
   }
   if ( !(message =~ /null/) ) sendEvent(name: 'lastResult', value: "${status} ${message}", descriptionText: message, type: 'API call')
+  if (logTrace) log.trace "EXIT doHttpRequest()"
   return result
 }
 

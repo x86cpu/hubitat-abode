@@ -1,7 +1,7 @@
 {
   "packageName": "Abode Alarm 2024",
   "author": "Eric Meddaugh",
-  "version": "2.0.7",
+  "version": "2.0.8",
   "minimumHEVersion": "2.1.0",
   "dateReleased": "2024-08-21",
   "drivers": [
@@ -17,35 +17,35 @@
       "name": "Abode Alarm Contact",
       "namespace": "x86cpu",
       "location": "https://raw.githubusercontent.com/x86cpu/hubitat-abode/master/drivers/AbodeContact.groovy",
-      "required": false
+      "required": true
     },
     {
       "id": "cc44a4bc-ed47-405e-8cd5-a76f4f44f82a",
       "name": "Abode Alarm Glass",
       "namespace": "x86cpu",
       "location": "https://raw.githubusercontent.com/x86cpu/hubitat-abode/master/drivers/AbodeGlass.groovy",
-      "required": false
+      "required": true
     },
     {
       "id": "d17f16eb-4cce-446e-b305-cec30f0f3356",
       "name": "Abode Alarm Motion",
       "namespace": "x86cpu",
       "location": "https://raw.githubusercontent.com/x86cpu/hubitat-abode/master/drivers/AbodeMotion.groovy",
-      "required": false
+      "required": true
     },
     {
       "id": "260adf54-f98a-421d-bfaf-5d889639a47e",
       "name": "Abode Alarm Smoke",
       "namespace": "x86cpu",
       "location": "https://raw.githubusercontent.com/x86cpu/hubitat-abode/master/drivers/AbodeSmoke.groovy",
-      "required": false
+      "required": true
     },
     {
       "id": "f22e3b56-c6ad-40b9-a4bb-0b768edb2a72",
       "name": "Abode Alarm MultiSensor",
       "namespace": "x86cpu",
       "location": "https://raw.githubusercontent.com/x86cpu/hubitat-abode/master/drivers/AbodeMultiSensor.groovy",
-      "required": false
+      "required": true
     }
   ]
 }
