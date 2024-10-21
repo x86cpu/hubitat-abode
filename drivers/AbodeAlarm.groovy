@@ -151,6 +151,7 @@ def createChildDevices() {
           if ( reply[cnt]['type'] == 'Smoke Detector' ) addChildDevice('x86cpu', 'Abode Alarm Smoke', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
           if ( reply[cnt]['type'] == 'LM' ) addChildDevice('x86cpu', 'Abode Alarm MultiSensor', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
           if ( reply[cnt]['type'] == 'Motion Sensor' ) addChildDevice('x86cpu', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
+          if ( reply[cnt]['type'] == 'Doorbell' ) addChildDevice('x86cpu', 'Abode Alarm Doorbell', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
         } else {
           if ( reply[cnt]['type'] == 'Door Contact' ) addChildDevice('x86cpu', 'Abode Alarm Contact', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name']])
           if ( reply[cnt]['type'] == 'Occupancy' ) addChildDevice('x86cpu', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name']])
@@ -158,6 +159,7 @@ def createChildDevices() {
           if ( reply[cnt]['type'] == 'Smoke Detector' ) addChildDevice('x86cpu', 'Abode Alarm Smoke', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name']])
           if ( reply[cnt]['type'] == 'LM' ) addChildDevice('x86cpu', 'Abode Alarm MultiSensor', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name']])
           if ( reply[cnt]['type'] == 'Motion Sensor' ) addChildDevice('x86cpu', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name']])
+          if ( reply[cnt]['type'] == 'Doorbell' ) addChildDevice('x86cpu', 'Abode Alarm Doorbell', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name']])
         }
         added=1
       }
@@ -176,8 +178,8 @@ def createChildDevices() {
         if ( reply[cnt]['type'] == 'LM' ) childDevice.sendEvent(name: "temperature", value: 0, unit: "°${location.temperatureScale}",  descriptionText: "${childDevice.displayName} temperature is NEW")
         if ( reply[cnt]['type'] == 'LM' ) childDevice.sendEvent(name: "illuminance", value: 0, unit: 'lx',  descriptionText: "${childDevice.displayName} lx is NEW")
 
-//
         if ( reply[cnt]['type'] == 'Motion Sensor' ) childDevice.sendEvent(name: "motion", value: "inactive", descriptionText: "${childDevice.displayName} is clear")
+        if ( reply[cnt]['type'] == 'Doorbell' ) childDevice.sendEvent(name: "button", value: "released", descriptionText: "${childDevice.displayName} is released")
       }
       cnt++
     }
@@ -607,6 +609,11 @@ def sendEnabledEvents(
         sendEvent(name: 'gatewayTimeline', value: alert_value, descriptionText: message, type: alert_type)
       break
 
+    case ~/Doorbell/:
+      if (saveContacts)
+        sendEvent(name: 'gatewayTimeline', value: alert_value, descriptionText: message, type: alert_type)
+      break
+
     case ~/CUE Automation/:    // or event code 520x
       if (saveAutomation)
         sendEvent(name: 'gatewayTimeline', value: alert_value, descriptionText: message, type: alert_type)
@@ -699,6 +706,10 @@ def parseEvent(String event_text) {
               childDevice=getChildDevice(json_data.device_id)
               if ( json_data.device_type == 'Door Contact' && json_data.event_type == 'Closed' ) childDevice.sendEvent(name: "contact", value: "closed", descriptionText: "${childDevice.displayName} is closed")
               if ( json_data.device_type == 'Door Contact' && json_data.event_type == 'Opened' ) childDevice.sendEvent(name: "contact", value: "open",   descriptionText: "${childDevice.displayName} is open")
+              if ( json_data.device_type == 'Doorbell' && json_data.event_type == 'Button Pressed' ) {
+                childDevice.sendEvent(name: "button", value: "pushed",   descriptionText: "${childDevice.displayName} is pushed")
+                runIn(60,"doorbellOff", [data: ["cid": json_data.device_id]] )
+              }
             }
           }
         }
@@ -792,14 +803,26 @@ def parseEvent(String event_text) {
 }
 
 private motionOff(data) {
-   log.debug "motionOff parameter: $data"
-   log.debug "cid : " + data.cid
-   if ( getChildDevice(cid) != null ) {
-     childDevice=getChildDevice(cid)
+   if (logDebug) log.debug "motionOff parameter: $data"
+   if (logDebug) log.debug "cid : " + data.cid
+   if ( getChildDevice(data.cid) != null ) {
+     childDevice=getChildDevice(data.cid)
      childDevice.sendEvent(name: "motion", value: "inactive", descriptionText: "${childDevice.displayName} is clear")
      alert_value = childDevice.displayName + "=inactive"
      message = childDevice.displayName + " inactive"
      sendEnabledEvents(alert_value, message, "Occupancy")
+   }
+}
+
+private doorbellOff(data) {
+   if (logDebug) log.debug "doorbellOff parameter: $data"
+   if (logDebug) log.debug "cid : " + data.cid
+   if ( getChildDevice(data.cid) != null ) {
+     childDevice=getChildDevice(data.cid)
+     childDevice.sendEvent(name: "button", value: "released", descriptionText: "${childDevice.displayName} is released")
+     alert_value = childDevice.displayName + "=Button released"
+     message = childDevice.displayName + " released"
+     sendEnabledEvents(alert_value, message, "Doorbell")
    }
 }
 

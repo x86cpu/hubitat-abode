@@ -1,7 +1,7 @@
 {
   "packageName": "Abode Alarm 2024",
   "author": "Eric Meddaugh",
-  "version": "2.0.8",
+  "version": "2.0.9",
   "minimumHEVersion": "2.1.0",
   "dateReleased": "2024-08-21",
   "drivers": [
@@ -45,6 +45,13 @@
       "name": "Abode Alarm MultiSensor",
       "namespace": "x86cpu",
       "location": "https://raw.githubusercontent.com/x86cpu/hubitat-abode/master/drivers/AbodeMultiSensor.groovy",
+      "required": true
+    },
+    {
+      "id": "48e5d75d-7025-4bff-8f47-5df800212e77",
+      "name": "Abode Alarm Doorbell",
+      "namespace": "x86cpu",
+      "location": "https://raw.githubusercontent.com/x86cpu/hubitat-abode/master/drivers/AbodeDoorbell.groovy",
       "required": true
     }
   ]
