@@ -675,7 +675,8 @@ def parseEvent(String event_text) {
 
       case ~/^gateway\.timeline.*/:
         event_type = json_data.event_type
-        is_alarm = json_data.event_type
+        is_alarm = json_data.is_alarm
+        event_code = json_data.event_code
         message = json_data.event_name
         user_info = formatEventUser(json_data)
 
@@ -685,8 +686,7 @@ def parseEvent(String event_text) {
           alert_type = 'CUE Automation'
           // Automation puts the rule name in device_name, which is backwards for our purposes
           alert_value = json_data.device_name
-        }
-        else {
+        } else {
           alert_value = [json_data.device_name, event_type].findAll { it.isEmpty() == false }.join('=')
           if (user_info.isEmpty() == false)
             alert_type = user_info
@@ -710,6 +710,21 @@ def parseEvent(String event_text) {
                 childDevice.sendEvent(name: "button", value: "pushed",   descriptionText: "${childDevice.displayName} is pushed")
                 runIn(60,"doorbellOff", [data: ["cid": json_data.device_id]] )
               }
+              if ( json_data.device_type == 'GLASS' ) { // && json_data.event_type == '??????'
+                log.debug "Got GLASS event: " + json_data
+                childDevice.sendEvent(name: "shock", value: "detected",   descriptionText: "${childDevice.displayName} is detected")
+                runIn(60,"glassClear", [data: ["cid": json_data.device_id]] )
+              }
+              if ( json_data.device_type == 'Smoke Detector' && json_data.event_type == 'Smoke Alarm'  ) {
+                childDevice.sendEvent(name: "smoke", value: "detected",   descriptionText: "${childDevice.displayName} is detected")
+                //runIn(60,"smokeClear", [data: ["cid": json_data.device_id]] )
+              }
+              if ( json_data.device_type == 'Smoke Detector' && json_data.event_type == 'Smoke Clear'  ) {
+                childDevice.sendEvent(name: "smoke", value: "clear",   descriptionText: "${childDevice.displayName} is clear")
+                //runIn(60,"smokeClear", [data: ["cid": json_data.device_id]] )
+              }
+            } else {
+              log.debug "Got unknown child event: " + json_data
             }
           }
         }
@@ -720,16 +735,16 @@ def parseEvent(String event_text) {
         reply = doHttpRequest('GET','/api/v1/devices/'+message)
         if (logTrace) log.trace "reply: ${reply}"
 // GLASS -- Log event to capture
-        if ( getChildDevice(reply[0]['id']) != null && reply[0]['type'] == 'GLASS' ) {
+        if ( reply[0] != null && getChildDevice(reply[0]['id']) != null && reply[0]['type'] == 'GLASS' ) {
           log.trace "reply: ${reply}"
         }
 // Smoke -- Log event to capture
-        if ( getChildDevice(reply[0]['id']) != null && reply[0]['type'] == 'Smoke Detector' ) {
+        if ( reply[0] != null && getChildDevice(reply[0]['id']) != null && reply[0]['type'] == 'Smoke Detector' ) {
           log.trace "reply: ${reply}"
         }
 
 // Occupancy sensor
-        if ( getChildDevice(reply[0]['id']) != null && reply[0]['type'] == 'Occupancy' ) {
+        if ( reply[0] != null && getChildDevice(reply[0]['id']) != null && reply[0]['type'] == 'Occupancy' ) {
           sub = -1
           if ( reply[0]['sub_type'] != null ) sub = reply[0]['sub_type'].toInteger()
           childDevice=getChildDevice(reply[0]['id'])
@@ -752,7 +767,7 @@ def parseEvent(String event_text) {
         }
 
 // LM (Multi Sensor)
-        if ( getChildDevice(reply[0]['id']) != null && reply[0]['type'] == 'LM' ) {
+        if ( reply[0] != null && getChildDevice(reply[0]['id']) != null && reply[0]['type'] == 'LM' ) {
           childDevice=getChildDevice(reply[0]['id'])
 // humidity: humidity:20 %
           if ( reply[0]['statuses']['humidity'] != null ) {
@@ -783,7 +798,7 @@ def parseEvent(String event_text) {
           if ( reply[0]['statuses']['lux'] != null ) {
              if (logTrace) log.trace "lux: "+reply[0]['statuses']['lux']
              (a,b) = reply[0]['statuses']['lux'].toString().split(' ')
-             if ( a >= 0  && b == 'lx' ) {
+             if ( a.toInteger() >= 0  && b == 'lx' ) {
                childDevice.sendEvent(name: "illuminance", value: a, unit: 'lx', descriptionText: "${childDevice.displayName} lux is "+ a)
                alert_value = reply[0]['name'] + "lux =" + a
                message = reply[0]['name'] + " lux " + a
@@ -823,6 +838,30 @@ private doorbellOff(data) {
      alert_value = childDevice.displayName + "=Button released"
      message = childDevice.displayName + " released"
      sendEnabledEvents(alert_value, message, "Doorbell")
+   }
+}
+
+private smokeClear(data) {
+   if (logDebug) log.debug "smokeClear parameter: $data"
+   if (logDebug) log.debug "cid : " + data.cid
+   if ( getChildDevice(data.cid) != null ) {
+     childDevice=getChildDevice(data.cid)
+     childDevice.sendEvent(name: "smoke", value: "clear", descriptionText: "${childDevice.displayName} is clear")
+     alert_value = childDevice.displayName + "=Smoke Detector clear"
+     message = childDevice.displayName + " clear"
+     sendEnabledEvents(alert_value, message, "Smoke Detector")
+   }
+}
+
+private glassClear(data) {
+   if (logDebug) log.debug "glassClear parameter: $data"
+   if (logDebug) log.debug "cid : " + data.cid
+   if ( getChildDevice(data.cid) != null ) {
+     childDevice=getChildDevice(data.cid)
+     childDevice.sendEvent(name: "shock", value: "clear", descriptionText: "${childDevice.displayName} is clear")
+     alert_value = childDevice.displayName + "=GLASS clear"
+     message = childDevice.displayName + " clear"
+     sendEnabledEvents(alert_value, message, "GLASS")
    }
 }
 
