@@ -1,7 +1,7 @@
 {
   "packageName": "Abode Alarm 2024",
   "author": "Eric Meddaugh",
-  "version": "2.0.10",
+  "version": "2.0.11",
   "minimumHEVersion": "2.1.0",
   "dateReleased": "2024-08-21",
   "drivers": [
@@ -52,6 +52,13 @@
       "name": "Abode Alarm Doorbell",
       "namespace": "x86cpu",
       "location": "https://raw.githubusercontent.com/x86cpu/hubitat-abode/master/drivers/AbodeDoorbell.groovy",
+      "required": true
+    },
+    {
+      "id": "31bc410e-904c-4571-a86a-6eded4d29653",
+      "name": "Abode Alarm Water",
+      "namespace": "x86cpu",
+      "location": "https://raw.githubusercontent.com/x86cpu/hubitat-abode/master/drivers/AbodeWater.groovy",
       "required": true
     }
   ]

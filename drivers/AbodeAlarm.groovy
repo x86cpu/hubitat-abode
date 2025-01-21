@@ -144,23 +144,14 @@ def createChildDevices() {
       }
       if (getChildDevice(reply[cnt]['id']) == null) {
         if (logDebug) log.debug " Need to add child!"
-        if ( deviceComponent ) {
-          if ( reply[cnt]['type'] == 'Door Contact' ) addChildDevice('x86cpu', 'Abode Alarm Contact', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
-          if ( reply[cnt]['type'] == 'Occupancy' ) addChildDevice('x86cpu', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
-          if ( reply[cnt]['type'] == 'GLASS' ) addChildDevice('x86cpu', 'Abode Alarm Glass', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
-          if ( reply[cnt]['type'] == 'Smoke Detector' ) addChildDevice('x86cpu', 'Abode Alarm Smoke', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
-          if ( reply[cnt]['type'] == 'LM' ) addChildDevice('x86cpu', 'Abode Alarm MultiSensor', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
-          if ( reply[cnt]['type'] == 'Motion Sensor' ) addChildDevice('x86cpu', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
-          if ( reply[cnt]['type'] == 'Doorbell' ) addChildDevice('x86cpu', 'Abode Alarm Doorbell', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: true])
-        } else {
-          if ( reply[cnt]['type'] == 'Door Contact' ) addChildDevice('x86cpu', 'Abode Alarm Contact', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name']])
-          if ( reply[cnt]['type'] == 'Occupancy' ) addChildDevice('x86cpu', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name']])
-          if ( reply[cnt]['type'] == 'GLASS' ) addChildDevice('x86cpu', 'Abode Alarm Glass', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name']])
-          if ( reply[cnt]['type'] == 'Smoke Detector' ) addChildDevice('x86cpu', 'Abode Alarm Smoke', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name']])
-          if ( reply[cnt]['type'] == 'LM' ) addChildDevice('x86cpu', 'Abode Alarm MultiSensor', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name']])
-          if ( reply[cnt]['type'] == 'Motion Sensor' ) addChildDevice('x86cpu', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name']])
-          if ( reply[cnt]['type'] == 'Doorbell' ) addChildDevice('x86cpu', 'Abode Alarm Doorbell', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name']])
-        }
+        if ( reply[cnt]['type'] == 'Door Contact' ) addChildDevice('x86cpu', 'Abode Alarm Contact', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: deviceComponent])
+        if ( reply[cnt]['type'] == 'Occupancy' ) addChildDevice('x86cpu', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: deviceComponent])
+        if ( reply[cnt]['type'] == 'GLASS' ) addChildDevice('x86cpu', 'Abode Alarm Glass', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: deviceComponent])
+        if ( reply[cnt]['type'] == 'Smoke Detector' ) addChildDevice('x86cpu', 'Abode Alarm Smoke', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: deviceComponent])
+        if ( reply[cnt]['type'] == 'LM' ) addChildDevice('x86cpu', 'Abode Alarm MultiSensor', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: deviceComponent])
+        if ( reply[cnt]['type'] == 'Motion Sensor' ) addChildDevice('x86cpu', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: deviceComponent])
+        if ( reply[cnt]['type'] == 'Doorbell' ) addChildDevice('x86cpu', 'Abode Alarm Doorbell', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: deviceComponent])
+        if ( reply[cnt]['type'] == 'Water Sensor' ) addChildDevice('x86cpu', 'Abode Alarm Water', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: deviceComponent])
         added=1
       }
       if (getChildDevice(reply[cnt]['id'])!= null && added == 1) {
@@ -180,6 +171,7 @@ def createChildDevices() {
 
         if ( reply[cnt]['type'] == 'Motion Sensor' ) childDevice.sendEvent(name: "motion", value: "inactive", descriptionText: "${childDevice.displayName} is clear")
         if ( reply[cnt]['type'] == 'Doorbell' ) childDevice.sendEvent(name: "button", value: "released", descriptionText: "${childDevice.displayName} is released")
+        if ( reply[cnt]['type'] == 'Water Sensor' ) childDevice.sendEvent(name: "water", value: "dry", descriptionText: "${childDevice.displayName} is dry")
       }
       cnt++
     }
@@ -706,6 +698,10 @@ def parseEvent(String event_text) {
               childDevice=getChildDevice(json_data.device_id)
               if ( json_data.device_type == 'Door Contact' && json_data.event_type == 'Closed' ) childDevice.sendEvent(name: "contact", value: "closed", descriptionText: "${childDevice.displayName} is closed")
               if ( json_data.device_type == 'Door Contact' && json_data.event_type == 'Opened' ) childDevice.sendEvent(name: "contact", value: "open",   descriptionText: "${childDevice.displayName} is open")
+              if ( json_data.device_type == 'Smoke Detector' && json_data.event_type == 'Smoke Alarm'  ) childDevice.sendEvent(name: "smoke", value: "detected",   descriptionText: "${childDevice.displayName} is detected")
+              if ( json_data.device_type == 'Smoke Detector' && json_data.event_type == 'Smoke Clear'  ) childDevice.sendEvent(name: "smoke", value: "clear",   descriptionText: "${childDevice.displayName} is clear")
+              if ( json_data.device_type == 'Water Sensor' && json_data.event_type == 'Water Detected' ) childDevice.sendEvent(name: "water", value: "wet",   descriptionText: "${childDevice.displayName} is wet")
+              if ( json_data.device_type == 'Water Sensor' && json_data.event_type == 'Water Detection Cleared' ) childDevice.sendEvent(name: "water", value: "dry",   descriptionText: "${childDevice.displayName} is dry")
               if ( json_data.device_type == 'Doorbell' && json_data.event_type == 'Button Pressed' ) {
                 childDevice.sendEvent(name: "button", value: "pushed",   descriptionText: "${childDevice.displayName} is pushed")
                 runIn(60,"doorbellOff", [data: ["cid": json_data.device_id]] )
@@ -714,14 +710,6 @@ def parseEvent(String event_text) {
                 log.debug "Got GLASS event: " + json_data
                 childDevice.sendEvent(name: "shock", value: "detected",   descriptionText: "${childDevice.displayName} is detected")
                 runIn(60,"glassClear", [data: ["cid": json_data.device_id]] )
-              }
-              if ( json_data.device_type == 'Smoke Detector' && json_data.event_type == 'Smoke Alarm'  ) {
-                childDevice.sendEvent(name: "smoke", value: "detected",   descriptionText: "${childDevice.displayName} is detected")
-                //runIn(60,"smokeClear", [data: ["cid": json_data.device_id]] )
-              }
-              if ( json_data.device_type == 'Smoke Detector' && json_data.event_type == 'Smoke Clear'  ) {
-                childDevice.sendEvent(name: "smoke", value: "clear",   descriptionText: "${childDevice.displayName} is clear")
-                //runIn(60,"smokeClear", [data: ["cid": json_data.device_id]] )
               }
             } else {
               log.debug "Got unknown child event: " + json_data
@@ -740,6 +728,10 @@ def parseEvent(String event_text) {
         }
 // Smoke -- Log event to capture
         if ( reply[0] != null && getChildDevice(reply[0]['id']) != null && reply[0]['type'] == 'Smoke Detector' ) {
+          log.trace "reply: ${reply}"
+        }
+// Water Sensor -- Log event to capture
+        if ( reply[0] != null && getChildDevice(reply[0]['id']) != null && reply[0]['type'] == 'Water Sensor' ) {
           log.trace "reply: ${reply}"
         }
 
