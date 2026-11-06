@@ -63,6 +63,7 @@ metadata {
     input name: 'targetModeAway', type: 'enum',   title: 'Hubitat Mode when Abode Away',     options: location.getModes().collect { it.toString() }
     input name: 'targetModeHome', type: 'enum',   title: 'Hubitat Mode when Abode Home',     options: location.getModes().collect { it.toString() }
     input name: 'syncArming',     type: 'bool',   title: 'Sync Exit Delay start',            defaultValue: false, description: '<em>Enable concurrent exit delays</em>'
+    input name: 'armConfirm',     type: 'bool',   title: 'Confirm arming when faulted',      defaultValue: true,  description: '<em>Re-send the request Abode requires when Arm Fault Type is Confirm Arm</em>'
 
     input name: 'saveContacts',   type: 'bool',   title: 'Save Abode timeline events',       defaultValue: false, description: '<em>...to Hubitat Events</em>'
     input name: 'saveGeofence',   type: 'bool',   title: 'Save Abode geofence events',       defaultValue: false, description: '<em>...to Hubitat Events</em>'
@@ -367,18 +368,73 @@ private clearLoginState() {
   sendEvent(name: 'isLoggedIn', value: false)
 }
 
+// Hubitat does not apply defaultValue to a device that already exists, so an
+// upgraded install reads this setting as null.  Treating null as false would
+// disable the feature for exactly the people who never chose to disable it.
+private armConfirmEnabled() {
+  return (settings.armConfirm == null) ? true : settings.armConfirm
+}
+
 // Send a request to change mode to Abode
 private changeMode(String new_mode) {
-  if(new_mode != device.currentValue('gatewayMode')) {
-    // Only update area 1 since area is not returned in event messages
-    if (logInfo) log.info "Sending request to change Abode gateway mode to ${new_mode}"
-    reply = doHttpRequest('PUT','/api/v1/panel/mode/1/' + new_mode)
-    if (reply['area'] == '1') {
-      state.localModeChange = new_mode
-    }
-  } else {
-    if (logDebug) log.debug "Gateway is already in mode ${new_mode}"
+  // gatewayMode is only as fresh as the last websocket notice, and Abode has
+  // been seen sitting on a mode change for 39 seconds.  Dropping a request
+  // because the stale attribute already reads the target mode is how an arm
+  // silently does nothing.  Only skip when there is nothing in flight.
+  def pending = state.localModeChange
+  if (new_mode == device.currentValue('gatewayMode') && (pending == null || pending == new_mode)) {
+    if (logInfo) log.info "Abode gateway is already in mode ${new_mode}; no request sent"
+    return
   }
+
+  // Only update area 1 since area is not returned in event messages
+  if (logInfo) log.info "Sending request to change Abode gateway mode to ${new_mode}"
+  reply = doHttpRequest('PUT','/api/v1/panel/mode/1/' + new_mode)
+  if (reply['area'] == '1') {
+    state.localModeChange = new_mode
+    state.remove('modeChangeRetry')
+    return
+  }
+
+  // The request did not take.  Re-authentication recovers a missing session on
+  // its own, so leave those alone; anything else may be a fault refusal.
+  if (state.lastHttpStatus == '401' || state.lastHttpStatus == '403') return
+  handleModeChangeFailure(new_mode)
+}
+
+// Abode refuses an arm while sensors are faulted when the account's Arm Fault
+// Type is 'Confirm Arm' -- the app shows a prompt and arms on a second tap.
+// There is no confirmation parameter or endpoint: repeating the identical
+// request inside Abode's window is the confirmation.  Measured on a live
+// system, repeats at 0.4s, 4.9s, 15.0s, 28.7s and 30.5s all armed, while
+// repeats at 58.0s and beyond were refused again, so the window closes
+// somewhere past 30 seconds.  Two seconds sits well inside it, and the first
+// of those measurements had both requests in flight at once, so there is no
+// minimum settling time to respect either.
+//
+// Recovery keys off the request having failed, not off recognising a status
+// code.  615 is not an HTTP status at all -- HTTP defines only 1xx through
+// 5xx -- so a vendor that invented it can renumber it, and matching on it
+// would be no more durable than matching on its reason phrase.
+private handleModeChangeFailure(String new_mode) {
+  if (!armConfirmEnabled()) {
+    log.warn "Abode refused the change to ${new_mode} (status ${state.lastHttpStatus}).  Enable 'Confirm arming when faulted' to re-send the request Abode needs in order to arm with faulted sensors."
+    return
+  }
+  // One retry only.  A second failure is not a confirmation prompt, and
+  // repeating would hammer the panel.
+  if (state.modeChangeRetry == new_mode) {
+    state.remove('modeChangeRetry')
+    log.error "Abode refused the change to ${new_mode} twice; giving up.  Last status was ${state.lastHttpStatus}."
+    return
+  }
+  state.modeChangeRetry = new_mode
+  log.warn "Abode refused the change to ${new_mode} (status ${state.lastHttpStatus}); re-sending to confirm arming with faulted sensors"
+  runInMillis(2000, 'retryModeChange', [data: [mode: new_mode]])
+}
+
+def retryModeChange(data) {
+  changeMode(data.mode)
 }
 
 // Process an update from Abode that the mode has changed
@@ -694,23 +750,30 @@ private doHttpRequest(String method, String path, Map body = [:]) {
         log.warn errormsg.toString()
       }
     } else {
-      status = 'Exception'
-      // A 401 or 403 here is how Abode reports "no valid session".  It is the
-      // normal result of any call made after a logout or once a token has
-      // expired, and validateSession() recovers by logging back in.  Logging
-      // it as an error made routine re-authentication look like a failure.
       // This exception carries no response object, so the status code has to
-      // be read back out of its message.
-      def text = error.toString()
-      def auth = (text =~ /status code: (401|403)/)
-      if (auth.find()) {
+      // be read back out of its message.  Capture whatever number is there
+      // rather than a fixed list: Abode returns codes outside the HTTP range
+      // (615 'Mode change fault'), and callers decide what to do from the
+      // fact that the call failed, not from the number itself.
+      def text  = error.toString()
+      def coded = (text =~ /status code: (\d+)/)
+      status    = coded.find() ? coded.group(1) : 'Exception'
+      message   = "${method} ${path} failed"
+      if (status == '401' || status == '403') {
+        // A 401 or 403 here is how Abode reports "no valid session".  It is the
+        // normal result of any call made after a logout or once a token has
+        // expired, and validateSession() recovers by logging back in.  Logging
+        // it as an error made routine re-authentication look like a failure.
         message = "${method} ${path} - not logged in"
-        if (logInfo) log.info "HTTPS ${method} ${path}: ${auth.group(1)} - not logged in, will re-authenticate"
+        if (logInfo) log.info "HTTPS ${method} ${path}: ${status} - not logged in, will re-authenticate"
       } else {
         log.error text
       }
     }
   }
+  // Recorded so a caller can tell a refusal from a transport failure without
+  // having to reparse the exception text.
+  state.lastHttpStatus = status
   if ( !(message =~ /null/) ) sendEvent(name: 'lastResult', value: "${status} ${message}", descriptionText: message, type: 'API call')
   if (logTrace) log.trace "EXIT doHttpRequest()"
   return result
@@ -885,17 +948,23 @@ String formatEventUser(HashMap jsondata) {
   return userdata
 }
 
-def syncArmingEvents(String event_type) {
-  switch(event_type) {
-    case ~/Arming .* Away.*/:
-      if (targetModeAway) location.setMode(targetModeAway)
-      break
-    case ~/Arming .* Home.*/:
-      if (targetModeHome) location.setMode(targetModeHome)
-      break
-    default:
-      // ignore it
-      break
+// Abode's wording for this event varies by source and has changed over time.
+// Observed forms include 'Arming - Away (Exit Timer Started)', 'Hub Arming w/
+// Fault(s) - Home (Exit Timer Started)' and the event_name_v2 wording 'System
+// arming with faults (Home mode exit timer started)'.  The previous matcher
+// used case ~/Arming .* Away.*/, and a regex in a Groovy case has to match the
+// whole string, so none of the current wordings matched and this preference
+// quietly did nothing.
+def syncArmingEvents(String action) {
+  def act = (action ?: '').toLowerCase()
+  // \barming\b does not match 'disarming': 's' and 'a' are both word
+  // characters, so there is no boundary between them.
+  if (!(act =~ /\barming\b/).find()) return
+  if (act.contains('away')) {
+    if (targetModeAway) location.setMode(targetModeAway)
+  }
+  else if (act.contains('home')) {
+    if (targetModeHome) location.setMode(targetModeHome)
   }
 }
 
@@ -1018,8 +1087,8 @@ def parseEvent(String event_text) {
 
         // Devices we ignore events for
         if (! devicesToIgnore().contains(json_data.device_name)) {
-          if (syncArming) syncArmingEvents(event_type)
-            sendEnabledEvents(alert_value, message, alert_type)
+          if (syncArming) syncArmingEvents(action)
+          sendEnabledEvents(alert_value, message, alert_type)
 
           if (saveDevices) {
             childDevice = getChildDevice(json_data.device_id)

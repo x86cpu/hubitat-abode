@@ -27,7 +27,14 @@ Import the driver from following URL:
 
 ## Requirements
 
-* In Abode System Settings, `Arm Fault Type` must be set to **Direct Arm**. The driver cannot yet respond to a prompt about faulty devices.
+* In Abode System Settings, `Arm Fault Type` may be set to either **Direct Arm** or **Confirm Arm**.
+
+  With **Confirm Arm**, Abode refuses any arming request made while a sensor is faulted, and the driver
+  logs `status code: 615, reason phrase: Mode change fault`. This is the same prompt the Abode app
+  shows, and the confirmation is nothing more than the identical request sent again a moment later.
+  The driver does that for you when the `Confirm arming when faulted` preference is enabled, which is
+  the default. Turn it off if you would rather an arm fail loudly than succeed with a door open --
+  the request will then be refused and the fault reported, and nothing will be armed.
 
 * Multi-Factor Authentication is supported. *You are using MFA for your home security, aren't you?* **Aren't you?**
   You'll have to supply the MFA code when saving preferences for a successful connection if MFA is enabled.
