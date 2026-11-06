@@ -980,11 +980,22 @@ def syncArmingEvents(String action) {
   // \barming\b does not match 'disarming': 's' and 'a' are both word
   // characters, so there is no boundary between them.
   if (!(act =~ /\barming\b/).find()) return
+  // The sibling path in updateGatewayMode logs before it calls setMode, and
+  // this one did not.  That made a preference which had been silently doing
+  // nothing since 2020 impossible to confirm from the driver log alone --
+  // proving the fix meant cross-referencing the hub's own location events by
+  // millisecond.  Nobody is going to do that twice.
   if (act.contains('away')) {
-    if (targetModeAway) location.setMode(targetModeAway)
+    if (targetModeAway) {
+      if (logInfo) log.info 'Changing Hubitat mode to ' + targetModeAway + ' at exit delay start'
+      location.setMode(targetModeAway)
+    }
   }
   else if (act.contains('home')) {
-    if (targetModeHome) location.setMode(targetModeHome)
+    if (targetModeHome) {
+      if (logInfo) log.info 'Changing Hubitat mode to ' + targetModeHome + ' at exit delay start'
+      location.setMode(targetModeHome)
+    }
   }
 }
 
