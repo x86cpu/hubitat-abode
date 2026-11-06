@@ -389,7 +389,7 @@ private changeMode(String new_mode) {
 
   // Only update area 1 since area is not returned in event messages
   if (logInfo) log.info "Sending request to change Abode gateway mode to ${new_mode}"
-  reply = doHttpRequest('PUT','/api/v1/panel/mode/1/' + new_mode)
+  reply = doHttpRequest('PUT','/api/v1/panel/mode/1/' + new_mode, [:], true)
   if (reply['area'] == '1') {
     state.localModeChange = new_mode
     state.remove('modeChangeRetry')
@@ -700,7 +700,11 @@ private storeCookies(String cookies) {
   }
 }
 
-private doHttpRequest(String method, String path, Map body = [:]) {
+// caller_handles_errors says the caller inspects the result and reports what
+// it did about a refusal.  Abode answering "no, confirm first" is a normal
+// step in arming, not a failure, and logging it red immediately above the
+// warn describing the recovery made a working exchange look broken.
+private doHttpRequest(String method, String path, Map body = [:], Boolean caller_handles_errors = false) {
   result = [:]
   status = ''
   message = ''
@@ -755,10 +759,13 @@ private doHttpRequest(String method, String path, Map body = [:]) {
       // rather than a fixed list: Abode returns codes outside the HTTP range
       // (615 'Mode change fault'), and callers decide what to do from the
       // fact that the call failed, not from the number itself.
-      def text  = error.toString()
-      def coded = (text =~ /status code: (\d+)/)
-      status    = coded.find() ? coded.group(1) : 'Exception'
-      message   = "${method} ${path} failed"
+      def text   = error.toString()
+      def coded  = (text =~ /status code: (\d+)/)
+      status     = coded.find() ? coded.group(1) : 'Exception'
+      def phrase = (text =~ /reason phrase: (.+?)\s*$/)
+      def reason = phrase.find() ? phrase.group(1) : ''
+      message    = "${method} ${path} failed"
+
       if (status == '401' || status == '403') {
         // A 401 or 403 here is how Abode reports "no valid session".  It is the
         // normal result of any call made after a logout or once a token has
@@ -766,7 +773,20 @@ private doHttpRequest(String method, String path, Map body = [:]) {
         // it as an error made routine re-authentication look like a failure.
         message = "${method} ${path} - not logged in"
         if (logInfo) log.info "HTTPS ${method} ${path}: ${status} - not logged in, will re-authenticate"
-      } else {
+      }
+      else if (status != 'Exception') {
+        // Abode answered and refused.  There is a status to act on, and it is
+        // recorded in lastResult either way.
+        if (reason) message = "${method} ${path} - ${reason}"
+        if (caller_handles_errors) {
+          if (logDebug) log.debug "HTTPS ${method} ${path}: ${status} ${reason}"
+        } else {
+          log.error "HTTPS ${method} ${path}: ${status} ${reason}"
+        }
+      }
+      else {
+        // No status code at all: the request never completed.  Nothing
+        // recovered from this and the raw text is the only clue there is.
         log.error text
       }
     }
@@ -1147,13 +1167,23 @@ def parseEvent(String event_text) {
         // rightly prefers, says "System armed with faults (Home)".  The word
         // boundary is what stops "Panic Alarm" and "Alarm Disabled" matching
         // on the "arm" inside "alarm".
+        // 'arming' is the exit-timer event; 'armed' and 'disarmed' are the
+        // terminal ones.  Abode has been seen sending hasFaults:"0" on an
+        // arming event (event_code 6061) while a sensor really was faulted,
+        // which cleared this attribute for the nine seconds until the armed
+        // event put it back.  An exit-timer event may therefore raise the
+        // flag but never lower it; only a terminal event clears it.  Abode
+        // has also been seen holding a timeline event for 39 seconds, so that
+        // window is not reliably short.
         def disarming = (action =~ /\bdisarm(ed|ing)\b/).find()
-        def arming    = (action =~ /\barm(ed|ing)\b/).find()
-        if (json_data.hasFaults != null && (arming || disarming)) {
+        def arming    = (action =~ /\barming\b/).find()
+        def armed     = (action =~ /\barmed\b/).find()
+        if (json_data.hasFaults != null && (arming || armed || disarming)) {
           // Faulted sensors mean nothing once the system is disarmed, so a
           // disarm always clears this regardless of what Abode reports.
-          def faulted = (!disarming && json_data.hasFaults.toString() != '0') ? 'true' : 'false'
-          if (device.currentValue('armedWithFaults') != faulted) {
+          def faulted  = (!disarming && json_data.hasFaults.toString() != '0') ? 'true' : 'false'
+          def mayClear = disarming || armed
+          if ((faulted == 'true' || mayClear) && device.currentValue('armedWithFaults') != faulted) {
             sendEvent(name: 'armedWithFaults', value: faulted, descriptionText: "Abode armedWithFaults is ${faulted}")
             if (faulted == 'true') log.warn "Abode system armed with faulted sensors: ${message}"
           }
