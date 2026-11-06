@@ -849,89 +849,7 @@ def parseEvent(String event_text) {
       case ~/^device\.update.*/:
         reply = doHttpRequest('GET','/api/v1/devices/'+message)
         if (logTrace) log.trace "reply: ${reply}"
-// GLASS -- Log event to capture
-        if ( reply[0] != null && getChildDevice(reply[0]['id']) != null && reply[0]['type'] == 'GLASS' ) {
-          log.trace "reply: ${reply}"
-        }
-// Smoke -- Log event to capture
-        if ( reply[0] != null && getChildDevice(reply[0]['id']) != null && reply[0]['type'] == 'Smoke Detector' ) {
-          log.trace "reply: ${reply}"
-        }
-// Water Sensor -- Log event to capture
-        if ( reply[0] != null && getChildDevice(reply[0]['id']) != null && reply[0]['type'] == 'Water Sensor' ) {
-          log.trace "reply: ${reply}"
-        }
-
-// Occupancy sensor
-        if ( reply[0] != null && getChildDevice(reply[0]['id']) != null && reply[0]['type'] == 'Occupancy' ) {
-          sub = -1
-          if ( reply[0]['sub_type'] != null ) sub = reply[0]['sub_type'].toInteger()
-          childDevice=getChildDevice(reply[0]['id'])
-          if (logTrace) log.trace "motion: "+reply[0]['statuses']['motion'] + " sub_type: " + sub
-          if ( reply[0]['statuses']['motion'].toString() == '0' ) {
-            childDevice.sendEvent(name: "motion", value: "inactive", descriptionText: "${childDevice.displayName} is clear")
-            alert_value = reply[0]['name'] + "=inactive"
-            message = reply[0]['name'] + " inactive"
-            sendEnabledEvents(alert_value, message, "Occupancy")
-          }
-          if ( reply[0]['statuses']['motion'].toString() == '1' ) {
-            childDevice.sendEvent(name: "motion", value: "active",   descriptionText: "${childDevice.displayName} detected motion")
-            alert_value = reply[0]['name'] + "=active"
-            message = reply[0]['name'] + " active"
-            sendEnabledEvents(alert_value, message, "Occupancy")
-            if ( sub == 0 ) {
-              runIn(60,"motionOff", [data: ["cid": reply[0]['id']]] )
-            }
-          }
-        }
-
-// LM (Multi Sensor)
-        if ( reply[0] != null && getChildDevice(reply[0]['id']) != null && reply[0]['type'] == 'LM' ) {
-          childDevice=getChildDevice(reply[0]['id'])
-// humidity: humidity:20 %
-          if ( reply[0]['statuses']['humidity'] != null ) {
-            if (logTrace) log.trace "humidity: "+reply[0]['statuses']['humidity']
-            def humidityParts = reply[0]['statuses']['humidity'].toString().split(' ')
-            if (humidityParts.size() >= 2) {
-              a = humidityParts[0]
-              b = humidityParts[1]
-              if (a.isInteger() && a.toInteger() >= 0 && b == "%") {
-                 childDevice.sendEvent(name: "humidity", value: a.toInteger(), unit: '% RH', descriptionText: "${childDevice.displayName} humidity is " + a + "%")
-                 alert_value = reply[0]['name'] + "humidity =" + a
-                 message = reply[0]['name'] + " humidity " + a + "%"
-                 sendEnabledEvents(alert_value, message, "LM")
-              }
-            }
-          }
-// temp: temp:32.1, temperature:90 °F
-// Take "temp" in C, and save it as whatever location we are in.
-          if ( reply[0]['statuses']['temp'] != null ) {
-             if (logTrace) log.trace "temp: "+reply[0]['statuses']['temp']
-             temperature = reply[0]['statuses']['temp'].toFloat()
-             if ( location.temperatureScale == "F" ) {
-                temperature = (reply[0]['statuses']['temp'].toFloat() * 1.8) + 32
-             }
-             childDevice.sendEvent(name: 'temperature', value: temperature.round(1), unit:"°${location.temperatureScale}", descriptionText: "${childDevice.displayName} temperature is "+ temperature + "°${location.temperatureScale}")
-             alert_value = reply[0]['name'] + "temperature =" + temperature
-             message = reply[0]['name'] + " temperature " + temperature + "°${location.temperatureScale}"
-             sendEnabledEvents(alert_value, message, "LM")
-          }
-// lux:  lux:0 lx
-          if ( reply[0]['statuses']['lux'] != null ) {
-            if (logTrace) log.trace "lux: "+reply[0]['statuses']['lux']
-            def luxParts = reply[0]['statuses']['lux'].toString().split(' ')
-            if (luxParts.size() >= 2) {
-              a = luxParts[0]
-              b = luxParts[1]
-              if (a.isInteger() && a.toInteger() >= 0 && b == 'lx') {
-                 childDevice.sendEvent(name: "illuminance", value: a.toInteger(), unit: 'lx', descriptionText: "${childDevice.displayName} lux is " + a)
-                 alert_value = reply[0]['name'] + "lux =" + a
-                 message = reply[0]['name'] + " lux " + a
-                 sendEnabledEvents(alert_value, message, "LM")
-              }
-            }
-          }
-        }
+        if ( reply != null && reply[0] != null ) updateChildFromDevice(reply[0])
         break
       default:
         if (logDebug) log.debug "Ignoring event ${event_class} ${message}"
@@ -939,6 +857,109 @@ def parseEvent(String event_text) {
     }
   } else {
     log.warn "Unparseable Abode event message: ${event_text}"
+  }
+}
+
+// Apply the state carried in an Abode device record to its child device.
+// Used both by websocket device.update events and by the initial sync when
+// children are created, so the two paths cannot drift apart.
+private updateChildFromDevice(Map dev) {
+  def childDevice = getChildDevice(dev['id'])
+  if (childDevice == null) return
+
+  def kind     = deviceKind(dev)
+  def statuses = dev['statuses'] ?: [:]
+
+  switch (kind) {
+    case 'contact':
+      // Contacts carry their real state in statuses.open.  There was no
+      // contact handler here at all, so a child only ever changed state from
+      // a timeline event -- and those stopped matching when Abode renamed the
+      // event strings.  The 'status' display string is the fallback.
+      def open = statuses['open']?.toString()
+      if (open == null) {
+        def shown = dev['status']?.toString()?.toLowerCase()
+        if (shown in ['open', 'opened'])        open = '1'
+        else if (shown in ['closed', 'close'])  open = '0'
+      }
+      if (open == '1')
+        childDevice.sendEvent(name: "contact", value: "open", descriptionText: "${childDevice.displayName} is open")
+      else if (open == '0')
+        childDevice.sendEvent(name: "contact", value: "closed", descriptionText: "${childDevice.displayName} is closed")
+      break
+
+    case 'motion':
+      def motion = statuses['motion']?.toString()
+      if (logTrace) log.trace "motion: ${motion} sub_type: ${dev['sub_type']}"
+      if (motion == '1') {
+        childDevice.sendEvent(name: "motion", value: "active", descriptionText: "${childDevice.displayName} detected motion")
+        sendEnabledEvents(dev['name'] + "=active", dev['name'] + " active", "Occupancy")
+        // sub_type 0 sensors have not been observed sending the clearing
+        // update, so schedule one.  Abode supplies the sensor's own
+        // occupancy_timer for this; 60 seconds used to be hardcoded.
+        if ( dev['sub_type']?.toString() == '0' ) {
+          def timer = 60
+          if ( dev['occupancy_timer'] != null && dev['occupancy_timer'].toString().isInteger() )
+            timer = dev['occupancy_timer'].toString().toInteger()
+          runIn(timer, "motionOff", [data: ["cid": dev['id']], overwrite: false])
+        }
+      } else if (motion == '0') {
+        childDevice.sendEvent(name: "motion", value: "inactive", descriptionText: "${childDevice.displayName} is clear")
+        sendEnabledEvents(dev['name'] + "=inactive", dev['name'] + " inactive", "Occupancy")
+      }
+      break
+
+    case 'multisensor':
+      updateMultiSensor(childDevice, dev, statuses)
+      break
+
+    case 'glass':
+    case 'smoke':
+    case 'water':
+      // These report an empty statuses map, so there is no state to apply.
+      // Their children are driven entirely by timeline events and the
+      // scheduled resets.  Logged so a gateway that does report something can
+      // be spotted.
+      if (logTrace) log.trace "${kind} device record: ${dev}"
+      break
+
+    default:
+      break
+  }
+}
+
+// LM multi sensor: humidity and lux arrive with their unit appended ("31 %",
+// "0 lx") while temp is a bare Celsius number.  Abode also sends a pre-rounded
+// 'temperature' field, which is deliberately ignored in favour of converting
+// the more precise Celsius value.
+private updateMultiSensor(childDevice, Map dev, Map statuses) {
+  if ( statuses['humidity'] != null ) {
+    if (logTrace) log.trace "humidity: " + statuses['humidity']
+    def parts = statuses['humidity'].toString().split(' ')
+    if (parts.size() >= 2 && parts[0].isInteger() && parts[0].toInteger() >= 0 && parts[1] == '%') {
+      def humidity = parts[0].toInteger()
+      childDevice.sendEvent(name: "humidity", value: humidity, unit: '% RH', descriptionText: "${childDevice.displayName} humidity is ${humidity}%")
+      sendEnabledEvents(dev['name'] + " humidity=" + humidity, dev['name'] + " humidity " + humidity + "%", "LM")
+    }
+  }
+
+  if ( statuses['temp'] != null ) {
+    if (logTrace) log.trace "temp: " + statuses['temp']
+    float temperature = statuses['temp'].toString().toFloat()
+    if ( location.temperatureScale == "F" ) temperature = (temperature * 1.8) + 32
+    def reading = temperature.round(1)
+    childDevice.sendEvent(name: "temperature", value: reading, unit: "°${location.temperatureScale}", descriptionText: "${childDevice.displayName} temperature is ${reading}°${location.temperatureScale}")
+    sendEnabledEvents(dev['name'] + " temperature=" + reading, dev['name'] + " temperature " + reading + "°${location.temperatureScale}", "LM")
+  }
+
+  if ( statuses['lux'] != null ) {
+    if (logTrace) log.trace "lux: " + statuses['lux']
+    def parts = statuses['lux'].toString().split(' ')
+    if (parts.size() >= 2 && parts[0].isInteger() && parts[0].toInteger() >= 0 && parts[1] == 'lx') {
+      def lux = parts[0].toInteger()
+      childDevice.sendEvent(name: "illuminance", value: lux, unit: 'lx', descriptionText: "${childDevice.displayName} lux is ${lux}")
+      sendEnabledEvents(dev['name'] + " lux=" + lux, dev['name'] + " lux " + lux, "LM")
+    }
   }
 }
 
