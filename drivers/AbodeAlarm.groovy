@@ -36,6 +36,12 @@ metadata {
     attribute 'gatewayMode', 'String'
     attribute 'gatewayTimeline', 'String'
     attribute 'lastResult', 'String'
+    // Gateway health, reported by Abode and previously discarded
+    capability 'PowerSource'
+    attribute 'gatewayBattery', 'ENUM', ['normal', 'low']
+    attribute 'rfJamming',      'ENUM', ['clear', 'detected']
+    attribute 'gatewayOnline',  'ENUM', ['false', 'true']
+    attribute 'cellularSignal', 'NUMBER'
   }
 
   preferences {
@@ -395,6 +401,109 @@ private parseLogin(Map data) {
   ['ip','mac','model','online'].each() { field ->
     updateDataValue(field, data.panel[field])
   }
+  storeGatewayDetails(data.panel)
+  storePermissions(data.permissions)
+  updateGatewayHealth(data.panel)
+
+  // How long this session is good for.  Without it there is no way to tell a
+  // genuine authentication failure from a simply expired token.
+  if (data.expired_at != null) updateDataValue('tokenExpires', data.expired_at.toString())
+}
+
+// Gateway and account reference details.  Stored as data values because none
+// of it changes in normal operation, but it is the first thing needed when
+// diagnosing an installation that is not in front of you.
+private storeGatewayDetails(Map panel) {
+  if (panel == null) return
+  [
+    'version'       : 'gatewayVersion',
+    'gateway_model' : 'gatewayModel',
+    'net_version'   : 'netVersion',
+    'rf_version'    : 'rfVersion',
+    'zigbee_version': 'zigbeeVersion',
+    'z_wave_version': 'zwaveVersion',
+    'site_id'       : 'siteID',
+    'report_account': 'reportAccount',
+    'timezone'      : 'timezone',
+    'is_demo'       : 'isDemo',
+  ].each { field, name ->
+    def value = panel[field]
+    if (value != null && !value.toString().isEmpty()) updateDataValue(name, value.toString())
+  }
+
+  // xml_version is Abode's API schema version.  A change to it is the warning
+  // that field names may have moved, which is exactly how the timeline rename
+  // from event_type to event_name_v2 broke this driver silently.
+  if (panel['xml_version'] != null) {
+    def schema = panel['xml_version'].toString()
+    def known  = getDataValue('xmlVersion')
+    if (known != null && known != schema)
+      log.warn "Abode API schema version changed from ${known} to ${schema} -- field names may have changed"
+    updateDataValue('xmlVersion', schema)
+  }
+
+  // This driver talks to a hardcoded host.  Abode white-labels the platform to
+  // dealers, and an account served from another domain would be refused on
+  // every request.  Unconfirmed -- no such account has been seen -- but it
+  // costs nothing to detect and would otherwise be invisible.
+  def dealer = panel['dealer_domain']?.toString()
+  if (dealer != null && !dealer.isEmpty()) {
+    updateDataValue('dealerDomain', dealer)
+    if (!dealer.startsWith(baseURL()))
+      log.warn "Abode reports dealer domain ${dealer} but this driver uses ${baseURL()} -- requests may be rejected"
+  }
+}
+
+// Account permissions, kept as one value rather than two dozen.  has_timeline
+// is checked explicitly: without it Abode sends no timeline events at all, and
+// the contact, smoke, water and doorbell children can never update.
+private storePermissions(Map permissions) {
+  if (permissions == null || permissions.isEmpty()) return
+  updateDataValue('permissions', groovy.json.JsonOutput.toJson(permissions))
+  def timeline = permissions['has_timeline']
+  if (timeline == null || timeline.toString() == '0')
+    log.warn 'This Abode account does not include timeline events. Contact, smoke, water and doorbell devices cannot report state without them.'
+}
+
+// Live panel health.  These were discarded entirely, so a gateway running on
+// battery, with mains power lost, or reporting RF jamming -- which on an alarm
+// panel is an attack indicator -- was invisible to Hubitat.  They refresh on
+// poll only; no websocket event carrying them has been observed.
+private updateGatewayHealth(Map panel) {
+  if (panel == null) return
+
+  if (panel['ac_fail'] != null) {
+    def source = panel['ac_fail'].toString() == '0' ? 'mains' : 'battery'
+    if (device.currentValue('powerSource') != source) {
+      sendEvent(name: 'powerSource', value: source, descriptionText: "Abode gateway power source is ${source}")
+      if (source != 'mains') log.warn 'Abode gateway has lost mains power'
+    }
+  }
+
+  if (panel['battery'] != null) {
+    def battery = panel['battery'].toString() == '0' ? 'normal' : 'low'
+    if (device.currentValue('gatewayBattery') != battery) {
+      sendEvent(name: 'gatewayBattery', value: battery, descriptionText: "Abode gateway battery is ${battery}")
+      if (battery != 'normal') log.warn 'Abode gateway reports a low battery'
+    }
+  }
+
+  if (panel['jam'] != null) {
+    def jam = panel['jam'].toString() == '0' ? 'clear' : 'detected'
+    if (device.currentValue('rfJamming') != jam) {
+      sendEvent(name: 'rfJamming', value: jam, descriptionText: "Abode gateway RF jamming is ${jam}")
+      if (jam != 'clear') log.warn 'Abode gateway reports RF jamming'
+    }
+  }
+
+  if (panel['online'] != null) {
+    def online = panel['online'].toString() == '1' ? 'true' : 'false'
+    if (device.currentValue('gatewayOnline') != online)
+      sendEvent(name: 'gatewayOnline', value: online, descriptionText: "Abode gateway online is ${online}")
+  }
+
+  if (panel['rssi'] != null && panel['rssi'].toString().isInteger())
+    sendEvent(name: 'cellularSignal', value: panel['rssi'].toString().toInteger())
 }
 
 private parseUser(Map user) {
@@ -403,7 +512,27 @@ private parseUser(Map user) {
   ['plan','mfa_enabled'].each() { field ->
     updateDataValue(field, user[field])
   }
-  // ignore everything else for now
+
+  // Reference details only.  Name, address, coordinates, phone number, email
+  // and cms_code are deliberately not stored: data values are plain text on
+  // the device page and end up in pasted logs, and cms_code is the central
+  // monitoring dispatch passcode.
+  [
+    'user_id'   : 'userID',
+    'temp_scale': 'tempScale',
+    'timezone'  : 'timezone',
+    'plan_id'   : 'planID',
+    'owner'     : 'owner',
+  ].each { field, name ->
+    def value = user[field]
+    if (value != null && !value.toString().isEmpty()) updateDataValue(name, value.toString())
+  }
+
+  // A non-owner account may not be permitted to arm, disarm or read the
+  // timeline, which surfaces as 403s on specific calls while login succeeds.
+  if (user['owner'] != null && user['owner'].toString() == '0')
+    log.warn 'This Abode account is not the system owner; some operations may be refused'
+
   return user
 }
 
@@ -412,6 +541,8 @@ private parsePanel(Map panel) {
   ['ip','online'].each() { field ->
     updateDataValue(field, panel[field])
   }
+  storeGatewayDetails(panel)
+  updateGatewayHealth(panel)
   areas = parseAreas(panel['areas']) ?: []
   parseMode(panel['mode'], areas) ?: {}
 
