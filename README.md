@@ -53,6 +53,11 @@ Import the driver from following URL:
 
 * The Abode API has been reverse engineered, and has not been officially published by Abode. They can make a breaking change without warning.
 
+* Abode rate limits. Cycling login and logout repeatedly -- saving preferences over and over while
+  testing, for instance -- can get Abode responding with "we are having trouble keeping up with your
+  changes". That is a rate limit, not a driver failure. No logs of it have been captured and the
+  threshold is unknown; leaving the integration alone for a while clears it.
+
 * The login expiration returned by the API does not appear to be used. My sessions have last beyond this time. The code successfully acquires new access tokens when the previous one expires. This appears to indicate that periodic re-authentication may not be necessary. See previous caveot that Abode could change this behavior without warning.
 
 * The Abode API does not support triggering the alarm remotely, and Abode has stated that they have no plans to add this feature. This means that Hubitat Safety Monitor can be triggered when the Abode alarm goes off, but not vice versa.
