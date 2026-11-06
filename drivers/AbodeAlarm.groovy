@@ -401,10 +401,21 @@ private parseMode(Map mode, Set areas) {
 
 // HTTP methods tuned for Abode
 private storeCookies(String cookies) {
-  // Cookies are comma separated, colon-delimited pairs
+  // Multiple Set-Cookie headers arrive joined by commas, and each one is a
+  // semicolon-delimited list whose first element is the name=value pair.
+  // Attribute values such as Expires contain their own commas, so splitting on
+  // comma also produces fragments that are not name=value pairs.  Indexing
+  // those blindly threw ArrayIndexOutOfBoundsException, which aborted the loop
+  // and discarded every cookie after the break -- including SESSION, which
+  // Abode requires on later requests.
+  def attributes = ['path', 'domain', 'expires', 'max-age', 'samesite', 'secure', 'httponly', 'version']
   cookies.split(',').each {
-    namevalue = it.split(';')[0].split('=')
-    state.cookies[namevalue[0]] = namevalue[1]
+    def namevalue = it.split(';')[0].split('=', 2)
+    if (namevalue.size() == 2) {
+      def name = namevalue[0].trim()
+      if (name && !attributes.contains(name.toLowerCase()))
+        state.cookies[name] = namevalue[1]
+    }
   }
 }
 
