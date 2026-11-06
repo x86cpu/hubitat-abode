@@ -41,7 +41,7 @@ metadata {
     attribute 'gatewayBattery', 'ENUM', ['normal', 'low']
     attribute 'rfJamming',      'ENUM', ['clear', 'detected']
     attribute 'gatewayOnline',  'ENUM', ['false', 'true']
-    attribute 'cellularSignal', 'NUMBER'
+    attribute 'gatewaySignal',  'NUMBER'
   }
 
   preferences {
@@ -201,9 +201,20 @@ private storeChildData(childDevice, Map dev) {
 
 def refresh() {
   if (validateSession()) {
-    parsePanel(getPanel())
-    if (state.webSocketConnected != true)
-      connectEventSocket()
+    // login() already fetches the panel and opens the event socket, so doing
+    // it again here fetched /api/v1/panel twice and opened a second socket
+    // that immediately closed the first.  sessionWasRenewed is set by
+    // validateSession() in this same execution and so is visible here;
+    // webSocketConnected is not, because the status callback that sets it
+    // runs in a separate execution and state is loaded once per execution.
+    if (state.sessionWasRenewed == true) {
+      state.remove('sessionWasRenewed')
+    }
+    else {
+      parsePanel(getPanel())
+      if (state.webSocketConnected != true)
+        connectEventSocket()
+    }
   }
 }
 
@@ -286,6 +297,10 @@ private login() {
 
 // Make sure we're still authenticated
 private validateSession() {
+  // Cleared on entry so the flag always describes this call.  refresh() reads
+  // it immediately after calling us, and any other caller that renewed a
+  // session must not leave a stale true behind for the next refresh().
+  state.remove('sessionWasRenewed')
   user = getUser()
   logged_in = user?.id ? true : false
   if(! logged_in) {
@@ -306,7 +321,15 @@ private validateSession() {
       login()
       user = getUser()
       logged_in = user?.id ? true : false
-      if ( logged_in ) return validateSession() // if we got logged in validateSession again
+      if ( logged_in ) {
+        // login() has already stored a fresh access token and parsed the
+        // panel, so only the user record still needs recording.  This
+        // replaced a recursive validateSession() call that re-fetched the
+        // /api/v1/user and /api/auth2/claims it had just retrieved.
+        parseUser(user)
+        state.sessionWasRenewed = true
+        return true
+      }
     } else {
       log.warn 'Cannot log in unattended: account uses MFA but no MFA seed is stored. Enter a current MFA code in preferences, or save the MFA seed to allow automatic login.'
       sendEvent(name: 'lastResult', value: 'MFA code required', descriptionText: 'Account uses MFA but no seed is stored; automatic login is not possible')
@@ -511,8 +534,12 @@ private updateGatewayHealth(Map panel) {
       sendEvent(name: 'gatewayOnline', value: online, descriptionText: "Abode gateway online is ${online}")
   }
 
+  // rssi is the gateway's own radio link, which is a cellular signal only on
+  // a gateway running the cellular backup radio.  It was named cellularSignal
+  // on the assumption that it always was; an ethernet-only F1 reporting
+  // is_cellular 0 proved otherwise.  parsePanel stores isCellular alongside.
   if (panel['rssi'] != null && panel['rssi'].toString().isInteger())
-    sendEvent(name: 'cellularSignal', value: panel['rssi'].toString().toInteger())
+    sendEvent(name: 'gatewaySignal', value: panel['rssi'].toString().toInteger())
 }
 
 private parseUser(Map user) {
@@ -532,6 +559,13 @@ private parseUser(Map user) {
     'timezone'  : 'timezone',
     'plan_id'   : 'planID',
     'owner'     : 'owner',
+    // Account state.  cms_active is whether professional monitoring will
+    // actually dispatch; plan_active is whether the plan is current, and a
+    // lapsed plan silently stops timeline events, which is the failure mode
+    // hardest to diagnose from the Hubitat side.
+    'cms_active'      : 'cmsActive',
+    'cms_adhoc_active': 'cmsAdhocActive',
+    'plan_active'     : 'planActive',
   ].each { field, name ->
     def value = user[field]
     if (value != null && !value.toString().isEmpty()) updateDataValue(name, value.toString())
@@ -550,6 +584,13 @@ private parsePanel(Map panel) {
   ['ip','online'].each() { field ->
     updateDataValue(field, panel[field])
   }
+
+  // Context for the gatewaySignal reading.  has_wifi is deliberately not
+  // stored: this endpoint reports 1 on a gateway with no wifi radio at all,
+  // while the login payload reports 0 for that same gateway.
+  if (panel['is_cellular'] != null)
+    updateDataValue('isCellular', panel['is_cellular'].toString())
+
   storeGatewayDetails(panel)
   updateGatewayHealth(panel)
   areas = parseAreas(panel['areas']) ?: []
@@ -647,7 +688,20 @@ private doHttpRequest(String method, String path, Map body = [:]) {
       }
     } else {
       status = 'Exception'
-      log.error error.toString()
+      // A 401 or 403 here is how Abode reports "no valid session".  It is the
+      // normal result of any call made after a logout or once a token has
+      // expired, and validateSession() recovers by logging back in.  Logging
+      // it as an error made routine re-authentication look like a failure.
+      // This exception carries no response object, so the status code has to
+      // be read back out of its message.
+      def text = error.toString()
+      def auth = (text =~ /status code: (401|403)/)
+      if (auth.find()) {
+        message = "${method} ${path} - not logged in"
+        if (logDebug) log.debug "HTTPS ${method} ${path}: ${auth.group(1)} - not logged in, will re-authenticate"
+      } else {
+        log.error text
+      }
     }
   }
   if ( !(message =~ /null/) ) sendEvent(name: 'lastResult', value: "${status} ${message}", descriptionText: message, type: 'API call')
