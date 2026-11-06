@@ -5,6 +5,49 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 
 This project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html)
 
+## 2026-11-06 Release 2.1.0
+
+### Added
+
+- Arm through Abode's fault confirmation prompt, so Direct Arm is no longer a
+  requirement.  Preference `Confirm arming when faulted`, on by default,
+  controls whether the driver sends the confirmation itself
+- New `armedWithFaults` attribute, and faults, bypass, tamper and low battery
+  reported on the child devices
+- Support the doorbell as a pushable button
+- Record gateway, panel and account details as data values on the parent device
+- Record the driver version as a data value
+
+### Changed
+
+- Match timeline events on `event_name_v2`, and device events on the Abode
+  event code, rather than on the device-name-prefixed `event_type`
+- Dispatch on the stable `type_tag` identifier instead of the display string
+- Send the driver version in the User-Agent
+- Log the Hubitat mode change at exit delay start
+- Log unhandled device events as a warning instead of dropping them
+- Document that Abode rate limits repeated logins
+
+### Fixed
+
+- Cookie parsing crash on Set-Cookie expiry dates, which dropped every cookie
+  after the first `Expires` attribute and led to 403 Invalid API Key
+- Stale session state presented on the login request itself
+- Mode sync at exit delay start, inert since 2020 because the matcher was a
+  regex in a Groovy case statement and so had to match the whole string
+- Door and window contacts not updating from `device.update` records
+- Child devices not syncing on preference save
+- Smoke children stuck at 'detected' because the clear was never scheduled
+- Glass tamper reporting
+- The event socket rebuilding itself every two minutes
+- Expected re-authentication and handled mode-change refusals logged as errors
+
+## 2024 Releases 2.0.0 - 2.0.13
+
+Abode Alarm 2024 fork.  Child devices for Contact, Motion, Glass, Smoke,
+MultiSensor, Doorbell and Water; MFA seed support for unattended login.
+Not individually documented -- see the git history.
+
 ## 2020-04-25 Release 1.0.1
 
 ### Added

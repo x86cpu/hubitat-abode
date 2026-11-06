@@ -97,6 +97,7 @@ private initialize() {
 }
 
 def updated() {
+  updateDataValue('driverVersion', driverVersion())
   if (logInfo) log.info 'Preferences saved.'
   if (logInfo) log.info 'debug logging is: ' + logDebug
   if (logInfo) log.info 'description logging is: ' + logDetails
@@ -263,8 +264,12 @@ private baseURL() {
   return 'https://my.goabode.com'
 }
 
+private driverVersion() {
+  return '2.1.0'
+}
+
 private driverUserAgent() {
-  return 'AbodeAlarm/2.1.0 Hubitat Elevation driver'
+  return 'AbodeAlarm/' + driverVersion() + ' Hubitat Elevation driver'
 }
 
 private login() {
