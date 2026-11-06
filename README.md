@@ -29,12 +29,21 @@ Import the driver from following URL:
 
 * In Abode System Settings, `Arm Fault Type` may be set to either **Direct Arm** or **Confirm Arm**.
 
-  With **Confirm Arm**, Abode refuses any arming request made while a sensor is faulted, and the driver
-  logs `status code: 615, reason phrase: Mode change fault`. This is the same prompt the Abode app
-  shows, and the confirmation is nothing more than the identical request sent again a moment later.
-  The driver does that for you when the `Confirm arming when faulted` preference is enabled, which is
-  the default. Turn it off if you would rather an arm fail loudly than succeed with a door open --
-  the request will then be refused and the fault reported, and nothing will be armed.
+  With **Confirm Arm**, Abode refuses an arming request made while a sensor is faulted, and the driver
+  logs `status code: 615, reason phrase: Mode change fault`. In the Abode app that same refusal appears
+  as a warning listing each open fault on its own line, with a choice to continue arming or cancel.
+  The confirmation Abode wants is nothing more than the identical request sent again a moment later.
+
+  The driver sends that second request for you when the `Confirm arming when faulted` preference is
+  enabled, which is the default, so an automation can arm a faulted system with nobody present to
+  answer a prompt. This changes nothing for a person at a keypad, holding a key remote, or using the
+  app -- those never go through the driver, and Abode still shows them its warning and still makes
+  them confirm.
+
+  Turn the preference off if you would rather the driver not arm past a fault on its own. The request
+  will be refused and the fault reported, and the driver will not retry. Abode keeps accepting a
+  confirmation for roughly half a minute afterward, so a second request inside that window -- another
+  press on the device page, or a rule that retries -- will still arm the system.
 
 * Multi-Factor Authentication is supported. *You are using MFA for your home security, aren't you?* **Aren't you?**
   You'll have to supply the MFA code when saving preferences for a successful connection if MFA is enabled.
