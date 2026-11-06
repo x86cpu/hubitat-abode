@@ -230,6 +230,16 @@ private driverUserAgent() {
 private login() {
   if(state.uuid == null) initialize()
   if ( mfa_seed != null && !mfa_seed.isEmpty() && mfa_used ) mfa_code = generateTOTP1(mfa_seed)
+
+  // Discard any previous session before authenticating.  doHttpRequest adds
+  // ABODE-API-KEY, Authorization and Cookie headers whenever the matching
+  // state entries exist, so a stale token from an expired session would
+  // otherwise be presented on the login request itself, which Abode answers
+  // with 403 Invalid API Key.
+  state.remove('token')
+  state.remove('access_token')
+  state.cookies = [:]
+
   input_values = [
     id: username,
     password: password,
@@ -262,11 +272,23 @@ private validateSession() {
       sendEvent(name: 'lastResult', value: 'Not logged in', descriptionText: 'Attempted transaction when not logged in')
       clearLoginState()
     }
-    if ( ( mfa_seed != null && !mfa_seed.isEmpty() && mfa_used ) || !mfa_used ) { // Attempt login if we have a mfa_seed saved or not using mfa
+    // Attempt login whenever unattended authentication is possible: the
+    // account does not use MFA, a seed is stored that a code can be derived
+    // from, or the user has just supplied a one-time code.  Testing only for
+    // (seed && mfa_used) || !mfa_used meant an MFA account with no stored seed
+    // matched neither branch and never attempted login at all, leaving the
+    // driver permanently logged out with nothing logged to explain why.
+    def can_login = !mfa_used ||
+                    ( mfa_seed != null && !mfa_seed.isEmpty() ) ||
+                    ( mfa_code != null && !mfa_code.isEmpty() )
+    if ( can_login ) {
       login()
       user = getUser()
       logged_in = user?.id ? true : false
       if ( logged_in ) return validateSession() // if we got logged in validateSession again
+    } else {
+      log.warn 'Cannot log in unattended: account uses MFA but no MFA seed is stored. Enter a current MFA code in preferences, or save the MFA seed to allow automatic login.'
+      sendEvent(name: 'lastResult', value: 'MFA code required', descriptionText: 'Account uses MFA but no seed is stored; automatic login is not possible')
     }
   }
   else {
