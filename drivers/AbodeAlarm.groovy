@@ -130,51 +130,66 @@ def createChildDevices() {
   }
   if (saveDevices && saveContacts) {
     reply = doHttpRequest('GET','/api/v1/devices')
-    cnt=0
-    added=0
-    while (reply[cnt] != null ) {
-      if (logTrace) log.trace("reply[$cnt]: "+ reply[cnt])
-      if (logTrace) log.trace("reply[$cnt][id]: "+ reply[cnt]['id'])
-      if (logTrace) log.trace("reply[$cnt][name]: "+ reply[cnt]['name'])
-      if (logTrace) log.trace("reply[$cnt][type]: "+ reply[cnt]['type'])
-      if (logTrace) log.trace("reply[$cnt][status]: "+ reply[cnt]['status'])
-      if ( getChildDevice(reply[cnt]['id']) != null ) {
-        if (logDebug) log.debug "Found child"
-        //childDevice = getChildDevice(reply[cnt]['id'])
-      }
-      if (getChildDevice(reply[cnt]['id']) == null) {
-        if (logDebug) log.debug " Need to add child!"
-        if ( reply[cnt]['type'] == 'Door Contact' ) addChildDevice('x86cpu', 'Abode Alarm Contact', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: deviceComponent])
-        if ( reply[cnt]['type'] == 'Occupancy' ) addChildDevice('x86cpu', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: deviceComponent])
-        if ( reply[cnt]['type'] == 'GLASS' ) addChildDevice('x86cpu', 'Abode Alarm Glass', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: deviceComponent])
-        if ( reply[cnt]['type'] == 'Smoke Detector' ) addChildDevice('x86cpu', 'Abode Alarm Smoke', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: deviceComponent])
-        if ( reply[cnt]['type'] == 'LM' ) addChildDevice('x86cpu', 'Abode Alarm MultiSensor', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: deviceComponent])
-        if ( reply[cnt]['type'] == 'Motion Sensor' ) addChildDevice('x86cpu', 'Abode Alarm Motion', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: deviceComponent])
-        if ( reply[cnt]['type'] == 'Doorbell' ) addChildDevice('x86cpu', 'Abode Alarm Doorbell', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: deviceComponent])
-        if ( reply[cnt]['type'] == 'Water Sensor' ) addChildDevice('x86cpu', 'Abode Alarm Water', reply[cnt]['id'], [name: 'Abode: '+reply[cnt]['name'], isComponent: deviceComponent])
-        added=1
-      }
-      if (getChildDevice(reply[cnt]['id'])!= null && added == 1) {
-        childDevice = getChildDevice(reply[cnt]['id'])
-        if ( childDevice.getName() != 'Abode: '+reply[cnt]['name'] ) childDevice.setName('Abode: '+reply[cnt]['name'])
-        if (logDebug) log.debug "setting child state: " + reply[cnt]['status']
-        if ( reply[cnt]['type'] == 'Door Contact' && reply[cnt]['status'] in ['Closed','Close'] ) childDevice.sendEvent(name: "contact", value: "closed", descriptionText: "${childDevice.displayName} is closed")
-        if ( reply[cnt]['type'] == 'Door Contact' && reply[cnt]['status'] in ['Opened','Open'] ) childDevice.sendEvent(name: "contact", value: "open",   descriptionText: "${childDevice.displayName} is open")
-        if ( reply[cnt]['type'] == 'Occupancy' && reply[cnt]['statuses']['motion'] == '0' ) childDevice.sendEvent(name: "motion", value: "inactive", descriptionText: "${childDevice.displayName} is clear")
-        if ( reply[cnt]['type'] == 'Occupancy' && reply[cnt]['statuses']['motion'] == '1' ) childDevice.sendEvent(name: "motion", value: "active",   descriptionText: "${childDevice.displayName} detected motion")
-        if ( reply[cnt]['type'] == 'GLASS' ) childDevice.sendEvent(name: "shock", value: "clear",   descriptionText: "${childDevice.displayName} clear")
-        if ( reply[cnt]['type'] == 'Smoke Detector' ) childDevice.sendEvent(name: "smoke", value: "clear",   descriptionText: "${childDevice.displayName} clear")
+    def drivers = [
+      'contact'    : 'Abode Alarm Contact',
+      'motion'     : 'Abode Alarm Motion',
+      'glass'      : 'Abode Alarm Glass',
+      'smoke'      : 'Abode Alarm Smoke',
+      'multisensor': 'Abode Alarm MultiSensor',
+      'doorbell'   : 'Abode Alarm Doorbell',
+      'water'      : 'Abode Alarm Water',
+    ]
+    def cnt = 0
+    while (reply != null && reply[cnt] != null ) {
+      def dev  = reply[cnt]
+      def kind = deviceKind(dev)
+      if (logTrace) log.trace "reply[$cnt]: ${dev}"
+      if (logDebug) log.debug "Abode device ${dev['id']} '${dev['name']}' type='${dev['type']}' kind='${kind}' status='${dev['status']}'"
 
-        if ( reply[cnt]['type'] == 'LM' ) childDevice.sendEvent(name: "humidity", value: 0, unit: '% RH',  descriptionText: "${childDevice.displayName} humidity is NEW")
-        if ( reply[cnt]['type'] == 'LM' ) childDevice.sendEvent(name: "temperature", value: 0, unit: "°${location.temperatureScale}",  descriptionText: "${childDevice.displayName} temperature is NEW")
-        if ( reply[cnt]['type'] == 'LM' ) childDevice.sendEvent(name: "illuminance", value: 0, unit: 'lx',  descriptionText: "${childDevice.displayName} lx is NEW")
+      def childDevice = getChildDevice(dev['id'])
+      if (childDevice == null) {
+        if (drivers.containsKey(kind)) {
+          if (logDebug) log.debug "Adding child device for '${dev['name']}'"
+          addChildDevice('x86cpu', drivers[kind], dev['id'], [name: 'Abode: '+dev['name'], isComponent: deviceComponent])
+          childDevice = getChildDevice(dev['id'])
+        } else if (logDebug) {
+          // Keypads and remote controllers report an empty statuses map and
+          // nothing but Online/Offline, so a child device would have nothing
+          // to display.  Not an error, and not worth a warning on every save.
+          log.debug "No child device for Abode type '${dev['type']}' ('${dev['name']}') -- it reports no state"
+        }
+      }
 
-        if ( reply[cnt]['type'] == 'Motion Sensor' ) childDevice.sendEvent(name: "motion", value: "inactive", descriptionText: "${childDevice.displayName} is clear")
-        if ( reply[cnt]['type'] == 'Doorbell' ) childDevice.sendEvent(name: "button", value: "released", descriptionText: "${childDevice.displayName} is released")
-        if ( reply[cnt]['type'] == 'Water Sensor' ) childDevice.sendEvent(name: "water", value: "dry", descriptionText: "${childDevice.displayName} is dry")
+      if (childDevice != null) {
+        if ( childDevice.getName() != 'Abode: '+dev['name'] ) childDevice.setName('Abode: '+dev['name'])
+        storeChildData(childDevice, dev)
+        updateChildFromDevice(dev)
       }
       cnt++
     }
+  }
+}
+
+// Reference details from the Abode device record, kept on the child device for
+// support and for Apps.  Stored as data values rather than attributes because
+// none of it changes during normal operation.
+private storeChildData(childDevice, Map dev) {
+  def fields = [
+    'zone'       : 'zone',
+    'uuid'       : 'abodeUUID',
+    'group_name' : 'groupName',
+    'is_window'  : 'isWindow',
+    'model'      : 'model',
+    'sub_type'   : 'subType',
+    'sensitivity': 'sensitivity',
+    'origin'     : 'origin',
+    'version'    : 'firmwareVersion',
+    'type_tag'   : 'typeTag',
+  ]
+  fields.each { field, name ->
+    def value = dev[field]
+    if (value != null && !value.toString().isEmpty() && value.toString() != 'null')
+      childDevice.updateDataValue(name, value.toString())
   }
 }
 
@@ -916,11 +931,21 @@ private updateChildFromDevice(Map dev) {
     case 'glass':
     case 'smoke':
     case 'water':
+    case 'doorbell':
       // These report an empty statuses map, so there is no state to apply.
       // Their children are driven entirely by timeline events and the
-      // scheduled resets.  Logged so a gateway that does report something can
-      // be spotted.
+      // scheduled resets.  Seed a benign starting value when the child has
+      // none yet, but never overwrite a value that is already set -- doing so
+      // unconditionally is what used to wipe real readings on every save.
       if (logTrace) log.trace "${kind} device record: ${dev}"
+      if (kind == 'glass' && childDevice.currentValue('shock') == null)
+        childDevice.sendEvent(name: "shock", value: "clear", descriptionText: "${childDevice.displayName} clear")
+      if (kind == 'smoke' && childDevice.currentValue('smoke') == null)
+        childDevice.sendEvent(name: "smoke", value: "clear", descriptionText: "${childDevice.displayName} clear")
+      if (kind == 'water' && childDevice.currentValue('water') == null)
+        childDevice.sendEvent(name: "water", value: "dry", descriptionText: "${childDevice.displayName} is dry")
+      if (kind == 'doorbell' && childDevice.currentValue('button') == null)
+        childDevice.sendEvent(name: "button", value: "released", descriptionText: "${childDevice.displayName} is released")
       break
 
     default:
