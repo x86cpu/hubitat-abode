@@ -42,6 +42,13 @@ metadata {
     attribute 'rfJamming',      'ENUM', ['clear', 'detected']
     attribute 'gatewayOnline',  'ENUM', ['false', 'true']
     attribute 'gatewaySignal',  'NUMBER'
+
+    // Alarm and monitoring state.  These exist so a Hubitat rule can act on
+    // them: none of it was previously visible anywhere in Hubitat.
+    attribute 'lastAlarm',        'String'
+    attribute 'armedWithFaults',  'ENUM', ['false', 'true']
+    attribute 'monitoringActive', 'ENUM', ['false', 'true']
+    attribute 'testModeActive',   'ENUM', ['false', 'true']
   }
 
   preferences {
@@ -149,7 +156,7 @@ def createChildDevices() {
     while (reply != null && reply[cnt] != null ) {
       def dev  = reply[cnt]
       def kind = deviceKind(dev)
-      if (logTrace) log.trace "reply[$cnt]: ${dev}"
+      if (logTrace) log.trace "reply[$cnt]: ${redact(dev)}"
       if (logDebug) log.debug "Abode device ${dev['id']} '${dev['name']}' type='${dev['type']}' kind='${kind}' status='${dev['status']}'"
 
       def childDevice = getChildDevice(dev['id'])
@@ -414,7 +421,7 @@ private updateMode(String new_mode) {
 // Abode types
 private getAccessToken() {
   reply = doHttpRequest('GET','/api/auth2/claims')
-  if (logTrace) log.trace reply
+  if (logTrace) log.trace redact(reply)
   return reply?.access_token
 }
 
@@ -653,7 +660,7 @@ private doHttpRequest(String method, String path, Map body = [:]) {
   if (state.cookies) params.headers['Cookie'] = state.cookies.collect { key, value -> "${key}=${value}" }.join('; ')
 
   Closure $parseResponse = { response ->
-    if (logTrace) log.trace response.data
+    if (logTrace) log.trace redact(response.data)
     if (logDebug) log.debug "HTTPS ${method} ${path} results: ${response.status}"
     status = response.status.toString()
     result = response.data
@@ -678,7 +685,7 @@ private doHttpRequest(String method, String path, Map body = [:]) {
   } catch(error) {
     // Is this an HTTP error or a different exception?
     if (error.metaClass.respondsTo(error, 'response')) {
-      if (logTrace) log.trace error.response.data
+      if (logTrace) log.trace redact(error.response.data)
       status = error.response.status?.toString()
       result = error.response.data
       message = error.response.data?.message ?:  "${method} ${path} failed"
@@ -698,7 +705,7 @@ private doHttpRequest(String method, String path, Map body = [:]) {
       def auth = (text =~ /status code: (401|403)/)
       if (auth.find()) {
         message = "${method} ${path} - not logged in"
-        if (logDebug) log.debug "HTTPS ${method} ${path}: ${auth.group(1)} - not logged in, will re-authenticate"
+        if (logInfo) log.info "HTTPS ${method} ${path}: ${auth.group(1)} - not logged in, will re-authenticate"
       } else {
         log.error text
       }
@@ -859,6 +866,11 @@ private eventsToIgnore() {
     'alarm.del',
     // Nest integration events
     'nest.refresh.true',
+    // Sent with an empty payload whenever a CUE automation runs.  The
+    // timeline event for the same automation carries everything usable, so
+    // this one is noise -- and noise that the new unhandled-class warning
+    // would otherwise report on every rule that fires.
+    'automation',
   ]
 }
 
@@ -985,6 +997,8 @@ def parseEvent(String event_text) {
         def event_code = json_data.event_code
         message = json_data.event_name
         def user_info = formatEventUser(json_data)
+        def kind       = deviceKind(json_data)
+        def action     = timelineAction(json_data).toLowerCase()
 
         if (logDebug) log.debug "${event_class} -${json_data.device_type} ${message}"
 
@@ -1010,83 +1024,270 @@ def parseEvent(String event_text) {
           if (saveDevices) {
             childDevice = getChildDevice(json_data.device_id)
             if (childDevice != null) {
-              def kind    = deviceKind(json_data)
-              def action  = timelineAction(json_data).toLowerCase()
-              def handled = true
-              switch (kind) {
-                case 'contact':
-                  if (action in ['closed', 'close'])
-                    childDevice.sendEvent(name: "contact", value: "closed", descriptionText: "${childDevice.displayName} is closed")
-                  else if (action in ['opened', 'open'])
-                    childDevice.sendEvent(name: "contact", value: "open", descriptionText: "${childDevice.displayName} is open")
-                  else
-                    handled = false
-                  break
-
-                case 'smoke':
-                  if (action.contains('clear')) {
-                    childDevice.sendEvent(name: "smoke", value: "clear", descriptionText: "${childDevice.displayName} is clear")
-                  } else if (action.contains('alarm') || action.contains('smoke')) {
-                    childDevice.sendEvent(name: "smoke", value: "detected", descriptionText: "${childDevice.displayName} is detected")
-                    runIn(smokeClearDelay(), "smokeClear", [data: ["cid": json_data.device_id], overwrite: false])
-                  } else {
-                    handled = false
-                  }
-                  break
-
-                case 'water':
-                  if (action.contains('clear') || action.contains('dry'))
-                    childDevice.sendEvent(name: "water", value: "dry", descriptionText: "${childDevice.displayName} is dry")
-                  else if (action.contains('detect') || action.contains('wet'))
-                    childDevice.sendEvent(name: "water", value: "wet", descriptionText: "${childDevice.displayName} is wet")
-                  else
-                    handled = false
-                  break
-
-                case 'doorbell':
-                  if (action.contains('press') || action.contains('push')) {
-                    childDevice.sendEvent(name: "button", value: "pushed", descriptionText: "${childDevice.displayName} is pushed")
-                    childDevice.sendEvent(name: "pushed", value: 1, isStateChange: true, descriptionText: "${childDevice.displayName} button 1 was pushed")
-                    runIn(60, "doorbellOff", [data: ["cid": json_data.device_id], overwrite: false])
-                  } else {
-                    handled = false
-                  }
-                  break
-
-                case 'glass':
-                  // No clear event has ever been observed from Abode for GLASS,
-                  // so the scheduled reset is the only thing that restores it.
-                  if (logDebug) log.debug "Got GLASS event: " + json_data
-                  childDevice.sendEvent(name: "shock", value: "detected", descriptionText: "${childDevice.displayName} is detected")
-                  runIn(60, "glassClear", [data: ["cid": json_data.device_id], overwrite: false])
-                  break
-
-                default:
-                  handled = false
-                  break
+              def plan = deviceEventPlan(kind, action)
+              if (plan == null) {
+                // Not a debug line.  The sensors most worth getting right --
+                // smoke, water, the doorbell -- are ones that cannot be tested
+                // here, so the only way a missed event string ever gets fixed
+                // is if the person it happened to can see it without having
+                // first known to turn debug logging on.
+                log.warn "Abode sent a device event this driver does not handle: ${describeEvent(json_data, kind, action)} -- please report this line"
               }
-              if (!handled)
-                log.warn "No handler matched Abode event: kind='${kind}' action='${action}' device='${json_data.device_name}' -- please report this with trace logging enabled"
+              else {
+                plan.events.each { ev ->
+                  def args = [name: ev.name, value: ev.value,
+                              descriptionText: "${childDevice.displayName} ${ev.text}"]
+                  if (ev.isStateChange) args.isStateChange = true
+                  childDevice.sendEvent(args)
+                }
+                if (plan.alert) log.info "Abode: ${childDevice.displayName} ${plan.alert}"
+                if (plan.reset)
+                  runIn(plan.delay ?: 60, plan.reset, [data: ["cid": json_data.device_id], overwrite: false])
+              }
             } else {
-              if (logDebug) log.debug "Got event for a device with no child: " + json_data
+              if (childlessEventIsNotable(json_data, kind))
+                log.warn "Abode sent an event for a device with no child in Hubitat: ${describeEvent(json_data, kind, action)} -- save preferences to create missing children"
+              else if (logDebug)
+                log.debug "Got event for a device with no child: ${redact(json_data)}"
             }
           }
         }
-// Panic Alarm
-        if ( is_alarm == 1 ) log.debug "Alarm event detected"
+
+        // Abode sends is_alarm as the string "1", so this integer comparison
+        // was never true and a panic alarm produced nothing but a debug line
+        // that nobody had enabled.  An alarm is the single event this driver
+        // exists for: it is logged unconditionally and published as an
+        // attribute so a rule can subscribe to it.  Checked outside the
+        // child-device block because the alarming device is often the keypad
+        // or the hub, neither of which has a child.
+        if ((is_alarm != null && is_alarm.toString() == '1') || action.contains('panic')) {
+          log.warn "Abode ALARM: ${json_data.event_name} (device '${json_data.device_name}', code ${event_code})"
+          sendEvent(name: 'lastAlarm', value: alert_value, descriptionText: message, isStateChange: true, type: 'Alarm')
+        }
+
+        // Abode puts hasFaults on every timeline event, but it only means
+        // anything on the arm and disarm ones: "armed with the garage door
+        // open" was invisible to Hubitat.
+        //
+        // Matched with a word-boundary regex rather than on device_type or on
+        // a leading word, because neither survives contact with the real
+        // events.  Arming from the keypad arrives as device_type Keypad while
+        // arming from the phone arrives as the Panel, and the two fields
+        // Abode sends word it differently: event_type says "Hub Armed w/
+        // Faults(s) - Home" while event_name_v2, which timelineAction
+        // rightly prefers, says "System armed with faults (Home)".  The word
+        // boundary is what stops "Panic Alarm" and "Alarm Disabled" matching
+        // on the "arm" inside "alarm".
+        def disarming = (action =~ /\bdisarm(ed|ing)\b/).find()
+        def arming    = (action =~ /\barm(ed|ing)\b/).find()
+        if (json_data.hasFaults != null && (arming || disarming)) {
+          // Faulted sensors mean nothing once the system is disarmed, so a
+          // disarm always clears this regardless of what Abode reports.
+          def faulted = (!disarming && json_data.hasFaults.toString() != '0') ? 'true' : 'false'
+          if (device.currentValue('armedWithFaults') != faulted) {
+            sendEvent(name: 'armedWithFaults', value: faulted, descriptionText: "Abode armedWithFaults is ${faulted}")
+            if (faulted == 'true') log.warn "Abode system armed with faulted sensors: ${message}"
+          }
+        }
         break
+
+      // Central monitoring settings.  Abode only sends these when one of them
+      // is changed, so the attributes track the last change seen rather than
+      // the state at startup.
+      case 'cms.setting':
+        parseCmsSetting(json_data)
+        break
+
       case ~/^device\.update.*/:
         reply = doHttpRequest('GET','/api/v1/devices/'+message)
-        if (logTrace) log.trace "reply: ${reply}"
+        if (logTrace) log.trace "reply: ${redact(reply)}"
         if ( reply != null && reply[0] != null ) updateChildFromDevice(reply[0])
         break
       default:
-        if (logDebug) log.debug "Ignoring event ${event_class} ${message}"
+        noteUnhandledEventClass(event_class, message)
         break
     }
   } else {
     log.warn "Unparseable Abode event message: ${event_text}"
   }
+}
+
+// Dispatch table for timeline events on devices that have a child.  Pure
+// string matching with no Hubitat calls in it, so it can be exercised against
+// real captured event strings without a hub.
+//
+// Clearing words are tested before alarming ones throughout.  Abode sends
+// "Smoke Cleared" and "Tamper Switch Restored", and a naive search for
+// "smoke" or "tamper" in those would latch the sensor into its alarm state
+// and leave it there.
+//
+// Returns null when nothing matched, which is what raises the warning in
+// parseEvent: an event the driver cannot interpret means a sensor is showing
+// the wrong state in Hubitat, and that has to be visible without debug on.
+private deviceEventPlan(String kind, String action) {
+  def act    = (action ?: '').toLowerCase()
+  def clears = act.contains('clear') || act.contains('restore') || act.contains('normal')
+
+  // Tamper is reported on every kind of sensor and says nothing about what
+  // that sensor normally measures, so it is matched before the per-kind
+  // table.  The GLASS branch used to fire shock=detected for every event it
+  // received, which meant "Tamper Switch Restored" raised a false glass-break
+  // alarm -- the opposite of what the event said.
+  if (act.contains('tamper')) {
+    def tampered = clears ? 'clear' : 'detected'
+    return [events: [[name: 'tamper', value: tampered, text: "tamper is ${tampered}"]],
+            alert: clears ? null : 'reports tampering']
+  }
+
+  switch (kind) {
+    case 'contact':
+      if (act.contains('close')) return [events: [[name: 'contact', value: 'closed', text: 'is closed']]]
+      if (act.contains('open'))  return [events: [[name: 'contact', value: 'open',   text: 'is open']]]
+      return null
+
+    case 'smoke':
+      if (clears)
+        return [events: [[name: 'smoke', value: 'clear', text: 'is clear']]]
+      if (act.contains('alarm') || act.contains('smoke'))
+        return [events: [[name: 'smoke', value: 'detected', text: 'is detected']],
+                alert: 'reports smoke', reset: 'smokeClear', delay: smokeClearDelay()]
+      return null
+
+    case 'water':
+      if (clears || act.contains('dry'))
+        return [events: [[name: 'water', value: 'dry', text: 'is dry']]]
+      // 'leak' and 'flood' are guesses at wording never observed here; the
+      // warning above is what will report the real string if they are wrong.
+      if (act.contains('detect') || act.contains('wet') || act.contains('leak') || act.contains('flood'))
+        return [events: [[name: 'water', value: 'wet', text: 'is wet']],
+                alert: 'reports water']
+      return null
+
+    case 'doorbell':
+      if (act.contains('press') || act.contains('push') || act.contains('ring') || act.contains('button'))
+        return [events: [[name: 'button', value: 'pushed', text: 'is pushed'],
+                         [name: 'pushed', value: 1, isStateChange: true, text: 'button 1 was pushed']],
+                alert: 'was pressed', reset: 'doorbellOff', delay: 60]
+      return null
+
+    case 'glass':
+      // No clear event has ever been observed from Abode for a glass break,
+      // so the scheduled reset is still what restores it.
+      if (clears)
+        return [events: [[name: 'shock', value: 'clear', text: 'is clear']]]
+      if (act.contains('glass') || act.contains('break') || act.contains('shock') || act.contains('alarm'))
+        return [events: [[name: 'shock', value: 'detected', text: 'is detected']],
+                alert: 'reports breaking glass', reset: 'glassClear', delay: 60]
+      return null
+
+    case 'motion':
+    case 'multisensor':
+      // Driven entirely by the device.update records, which carry the real
+      // sensor state and the sensor's own occupancy timer.  A timeline event
+      // for these is redundant rather than unhandled, so return an empty plan
+      // instead of null: null is what raises the warning, and a motion sensor
+      // in a busy room would turn that into a flood.
+      return [events: []]
+
+    default:
+      return null
+  }
+}
+
+// Named fields only.  These two warnings are written to be pasted into a
+// public bug report, and a whole timeline payload carries the gateway MAC
+// address, the account holder's name and whoever triggered the event.
+// event_code is a Contact ID / SIA numeric and is the most stable thing in
+// the record: Abode renames the English strings, not the codes.
+private describeEvent(Map json_data, String kind, String action) {
+  return "kind='${kind}' action='${action}' event_code='${json_data?.event_code}'" +
+         " event_name_v2='${json_data?.event_name_v2}' device_type='${json_data?.device_type}'" +
+         " type_tag='${json_data?.type_tag}' device='${json_data?.device_name}'"
+}
+
+// The hub itself sends a timeline event on every arm and disarm with an empty
+// device_id, and keypads and remote controllers have no child driver in this
+// package at all, so finding no child for those is expected.  Anything else
+// means Abode has a sensor that Hubitat never got a child device for, which
+// is worth saying out loud because that sensor silently does nothing.
+private childlessEventIsNotable(Map json_data, String kind) {
+  def id = json_data?.device_id?.toString() ?: ''
+  if (id.isEmpty()) return false
+  if (kind == 'keypad' || kind == 'remote') return false
+  return true
+}
+
+// An event class the driver has never seen is the only hint that Abode has
+// added something.  Warned once per class so that a chatty new class cannot
+// flood the log, with a running count kept in state for whoever reports it.
+private noteUnhandledEventClass(String event_class, String message) {
+  def seen  = state.unhandledEventClasses ?: [:]
+  def count = (seen[event_class] ?: 0) + 1
+  seen[event_class] = count
+  state.unhandledEventClasses = seen
+
+  if (count == 1)
+    log.warn "Abode sent an event class this driver does not handle: '${event_class}' -- please report this line"
+  else if (logDebug)
+    log.debug "Ignoring event ${event_class} ${message}"
+}
+
+// Central monitoring settings, pushed over the websocket when one of them is
+// changed in the Abode app.  testModeActive is the one that matters: while it
+// is on the monitoring centre will not dispatch, which is exactly the state
+// you do not want to discover after the fact.  The dispatch toggles are
+// reference state rather than something to write rules against, so they are
+// data values.  Only fields actually present are stored -- dispatchMedical
+// did not exist in earlier payloads.
+private parseCmsSetting(Map settings) {
+  if (settings == null || settings.isEmpty()) return
+
+  ['monitoringActive', 'testModeActive'].each { field ->
+    if (settings.containsKey(field)) {
+      def value = settings[field].toString()
+      if (device.currentValue(field) != value)
+        sendEvent(name: field, value: value, descriptionText: "Abode ${field} is ${value}", type: 'Monitoring')
+    }
+  }
+
+  ['sendMedia', 'dispatchPolice', 'dispatchFire', 'dispatchMedical', 'dispatchWithoutVerification'].each { field ->
+    if (settings.containsKey(field)) updateDataValue(field, settings[field].toString())
+  }
+
+  if (settings.containsKey('testModeActive')) {
+    if (settings['testModeActive'].toString() == 'true')
+      log.warn 'Abode is in monitoring test mode: the monitoring centre will not dispatch'
+    else if (logInfo)
+      log.info 'Abode monitoring test mode is off'
+  }
+  if (settings['monitoringActive'] != null && settings['monitoringActive'].toString() != 'true')
+    log.warn 'Abode professional monitoring is not active'
+}
+
+// Trace and debug dumps of whole Abode payloads are the most useful thing in
+// a bug report and the most dangerous thing to ask a stranger to paste: the
+// login response carries a live bearer token and the user record carries the
+// account holder's name, address, coordinates, phone number, email and the
+// central monitoring dispatch passcode.  Keys and structure are kept so the
+// shape of the payload is still readable; the values are replaced.  The
+// marker is in square brackets because Hubitat renders its log pane as HTML
+// and silently swallows anything that looks like a tag: an angle-bracketed
+// marker came out as an empty field, which reads as "Abode sent nothing
+// here" rather than "this was removed".
+private redact(data) {
+  def secret = ['cms_code', 'address', 'address_line_2', 'city', 'state', 'zip',
+                'latitude', 'longitude', 'phone', 'phone_number', 'email',
+                'first_name', 'last_name', 'profile_pic', 'mac',
+                'access_token', 'refresh_token', 'token', 'password',
+                'user_name', 'user_id', 'event_by', 'mobile_name', 'pin_code_user']
+
+  if (data instanceof Map)
+    return data.collectEntries { key, value ->
+      [(key): secret.contains(key.toString().toLowerCase()) ? '[redacted]' : redact(value)]
+    }
+  if (data instanceof List)
+    return data.collect { item -> redact(item) }
+  return data
 }
 
 // Abode reports a fault map on every device and none of it was used, so a
@@ -1195,7 +1396,7 @@ private updateChildFromDevice(Map dev) {
       // scheduled resets.  Seed a benign starting value when the child has
       // none yet, but never overwrite a value that is already set -- doing so
       // unconditionally is what used to wipe real readings on every save.
-      if (logTrace) log.trace "${kind} device record: ${dev}"
+      if (logTrace) log.trace "${kind} device record: ${redact(dev)}"
       if (kind == 'glass' && childDevice.currentValue('shock') == null)
         childDevice.sendEvent(name: "shock", value: "clear", descriptionText: "${childDevice.displayName} clear")
       if (kind == 'smoke' && childDevice.currentValue('smoke') == null)
