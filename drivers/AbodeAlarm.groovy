@@ -356,20 +356,29 @@ private updateMode(String new_mode) {
   if (logInfo) log.info 'Abode gateway mode has changed to ' + new_mode
   sendEvent(name: 'gatewayMode', value: new_mode, descriptionText: 'Gateway mode has changed to ' + new_mode)
 
-  // Set isArmed?
-  isArmed = getChildDevice(device.id + '-isArmed')
-  if (new_mode == 'standby')
+  // Set isArmed?  The switch is created at install, but a user can delete it.
+  def isArmed = getChildDevice(device.id + '-isArmed')
+  if (isArmed == null)
+    log.warn "isArmed child switch is missing; run Save Preferences on the Abode device to recreate it"
+  else if (new_mode == 'standby')
     isArmed.off()
-  else {
+  else
     isArmed.on()
+
+  if (new_mode != 'standby') {
 
     // Avoid changing the mode if it's a rebound from a local action
     if (new_mode == state.localModeChange) {
       state.remove('localModeChange')
     } else {
-      if (targetModeAway && new_mode == 'away') {
-        if (logInfo) log.info 'Changing Hubitat mode to ' + targetModeAway
-        location.setMode(targetModeAway)
+      // Each Abode mode maps to its own Hubitat mode.  Testing targetModeAway
+      // first meant that an 'away' event with no Away mode configured fell
+      // through and set the Home mode instead.
+      if (new_mode == 'away') {
+        if (targetModeAway) {
+          if (logInfo) log.info 'Changing Hubitat mode to ' + targetModeAway
+          location.setMode(targetModeAway)
+        }
       }
       else if (targetModeHome) {
         if (logInfo) log.info 'Changing Hubitat mode to ' + targetModeHome
@@ -849,13 +858,15 @@ def sendEnabledEvents(
 }
 
 def parseEvent(String event_text) {
-  twovalue = event_text =~ /^\["com\.goabode\.([\w+\.]+)",(.*)\]$/
-  a = 0
-  b = 0
-  float temperature = 0.0
+  def twovalue = event_text =~ /^\["com\.goabode\.([\w+\.]+)",(.*)\]$/
+  def json_data = [:]
+  def message = ''
+  def event_type = ''
+  def alert_value = ''
+  def alert_type = ''
   if (twovalue.find()) {
-    event_class = twovalue[0][1]
-    event_data = twovalue[0][2]
+    def event_class = twovalue[0][1]
+    def event_data = twovalue[0][2]
 
     if (eventsToIgnore().contains(event_class))
       return
@@ -898,10 +909,10 @@ def parseEvent(String event_text) {
 
       case ~/^gateway\.timeline.*/:
         event_type = json_data.event_type
-        is_alarm = json_data.is_alarm
-        event_code = json_data.event_code
+        def is_alarm = json_data.is_alarm
+        def event_code = json_data.event_code
         message = json_data.event_name
-        user_info = formatEventUser(json_data)
+        def user_info = formatEventUser(json_data)
 
         if (logDebug) log.debug "${event_class} -${json_data.device_type} ${message}"
 
@@ -1326,7 +1337,11 @@ def webSocketStatus(String message) {
       state.webSocketConnectAttempt += 1
   }
 
-  if ((device.currentValue('isLoggedIn') == true) && !state.webSocketConnected && state.webSocketConnectAttempt < 10)
+  // isLoggedIn is declared as a String attribute, so currentValue returns
+  // "true" rather than the boolean.  Comparing against true was never
+  // satisfied, so this reconnect never ran and recovery depended entirely on
+  // the five minute socket timeout poll.
+  if ((device.currentValue('isLoggedIn')?.toString() == 'true') && !state.webSocketConnected && state.webSocketConnectAttempt < 10)
     runIn(120, 'connectEventSocket')
 }
 
