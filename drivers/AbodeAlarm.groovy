@@ -1093,7 +1093,7 @@ def parseEvent(String event_text) {
           if (saveDevices) {
             childDevice = getChildDevice(json_data.device_id)
             if (childDevice != null) {
-              def plan = deviceEventPlan(kind, action)
+              def plan = deviceEventPlan(kind, action, json_data?.event_code?.toString() ?: '')
               if (plan == null) {
                 // Not a debug line.  The sensors most worth getting right --
                 // smoke, water, the doorbell -- are ones that cannot be tested
@@ -1193,7 +1193,47 @@ def parseEvent(String event_text) {
 // Returns null when nothing matched, which is what raises the warning in
 // parseEvent: an event the driver cannot interpret means a sensor is showing
 // the wrong state in Hubitat, and that has to be visible without debug on.
-private deviceEventPlan(String kind, String action) {
+// Abode numbers its timeline events, and the four codes below are the only
+// ones observed here whose meaning is confirmed by the event text that came
+// with them, on more than one device:
+//
+//   1383 / 3383  tamper triggered / restored  -- genuine Contact ID (SIA DC-05)
+//   5100 / 5101  contact opened / closed      -- Abode's own numbering
+//
+// Nothing else is listed.  Smoke, water, glass and the doorbell have never
+// appeared with a code in any capture taken here, and inventing one risks
+// colliding with a real code and mislabelling an alarm -- worse than the
+// warning an unmatched event already raises.  Those stay on text alone.
+//
+// Codes are checked ahead of the text because Abode's wording has already
+// changed once under this driver, when event_name_v2 appeared and replaced
+// strings the matchers had been written against.  The numbers stayed put.
+private deviceEventCodePlan(String kind, String event_code) {
+  switch (event_code) {
+    // Every child driver carries TamperAlert, so this is not gated on kind.
+    case '1383':
+      return [events: [[name: 'tamper', value: 'detected', text: 'tamper is detected']],
+              alert: 'reports tampering']
+    case '3383':
+      return [events: [[name: 'tamper', value: 'clear', text: 'tamper is clear']]]
+
+    // Only the contact child exposes a contact attribute.  A different kind
+    // of sensor sending these would fall through to the text table rather
+    // than have an attribute it does not have written to it.
+    case '5100':
+      return (kind == 'contact') ? [events: [[name: 'contact', value: 'open',   text: 'is open']]] : null
+    case '5101':
+      return (kind == 'contact') ? [events: [[name: 'contact', value: 'closed', text: 'is closed']]] : null
+
+    default:
+      return null
+  }
+}
+
+private deviceEventPlan(String kind, String action, String event_code = '') {
+  def coded  = deviceEventCodePlan(kind, event_code ?: '')
+  if (coded != null) return coded
+
   def act    = (action ?: '').toLowerCase()
   def clears = act.contains('clear') || act.contains('restore') || act.contains('normal')
 
