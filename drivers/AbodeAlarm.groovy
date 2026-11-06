@@ -712,6 +712,14 @@ private doHttpRequest(String method, String path, Map body = [:]) {
 // Abode event websocket handling
 def connectEventSocket() {
   if (!state.webSocketConnectAttempt) state.webSocketConnectAttempt = 0
+  // Never stack a socket on top of a live one.  A second connect silently
+  // displaces the first, and the close that results is indistinguishable from
+  // a real disconnect.  Closing deliberately first keeps it to one socket and
+  // makes the replacement visible in the log.
+  if (state.webSocketConnected == true) {
+    if (logDebug) log.debug 'Replacing the existing Abode event socket'
+    terminateEventSocket()
+  }
   if (logDebug) log.debug "Attempting WebSocket connection for Abode events (attempt ${state.webSocketConnectAttempt})"
   try {
     interfaces.webSocket.connect('wss://my.goabode.com/socket.io/?EIO=3&transport=websocket', headers: [
@@ -724,6 +732,16 @@ def connectEventSocket() {
   catch(error) {
     log.error 'WebSocket connection to Abode event socket failed: ' + error.toString()
   }
+}
+
+// True when a socket came up so recently that a close arriving now is almost
+// certainly the one it displaced.  Hubitat gives no socket identity in the
+// status callback, so recency is the only thing available to tell them apart.
+// The cost of a false positive is bounded: a genuine close ignored here is
+// still caught by checkSocketTimeout()'s ping deadline within five minutes.
+private socketCloseIsStale() {
+  def opened = state.webSocketOpenedAt
+  return (opened != null && (now() - opened) < 3000)
 }
 
 private terminateEventSocket() {
@@ -1370,9 +1388,25 @@ def webSocketStatus(String message) {
       sendEvent([name: 'lastResult', value: 'eventSocket connected'])
       state.webSocketConnected = true
       state.webSocketConnectAttempt = 0
+      state.webSocketOpenedAt = now()
+      // A successful open cancels any reconnect queued by the close that came
+      // before it.  Without this the scheduled connect fired regardless,
+      // displaced the socket that had just come up, and that socket's close
+      // queued the next one: a tear-down and rebuild every 120 seconds, which
+      // dropped live events until the following reconnect replayed them.
+      unschedule('connectEventSocket')
 		  break
 
     case ~/^status: closing.*$/:
+      // Opening a socket closes the one it replaces, so a close arriving
+      // just after an open belongs to the displaced socket rather than the
+      // live one.  Acting on it would mark a working connection as down and
+      // queue a reconnect that breaks it.  Falling through to the check below
+      // is safe because webSocketConnected is left true.
+      if (socketCloseIsStale()) {
+        if (logDebug) log.debug 'Ignoring close of an Abode event socket that has already been replaced'
+        break
+      }
       if (logDebug) log.debug 'Closing connection to Abode event socket'
       sendEvent([name: 'lastResult', value: 'eventSocket disconnected'])
       state.webSocketConnected = false
