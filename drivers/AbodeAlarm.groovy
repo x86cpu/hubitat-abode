@@ -563,6 +563,58 @@ def checkSocketTimeout() {
   }
 }
 
+// Abode prefixes the timeline event_type with the device name, so a contact
+// opening arrives as "Garage Inside Door Opened" rather than "Opened".  The
+// event_name_v2 field carries the bare action and is what should be matched.
+// Fall back to stripping the device name from event_type for gateways that do
+// not send the newer field.
+private timelineAction(Map json_data) {
+  def action = json_data.event_name_v2?.toString() ?: ''
+  if (action.isEmpty()) {
+    action = json_data.event_type?.toString() ?: ''
+    def name = json_data.device_name?.toString() ?: ''
+    if (!name.isEmpty() && action.startsWith(name)) action = action.substring(name.length())
+  }
+  return action.trim()
+}
+
+// Canonical device kind for dispatch.  type_tag is a machine identifier that
+// survives the display-string renames Abode periodically makes, so prefer it
+// and fall back to the type / device_type display string.  The water sensor
+// and doorbell tags are unconfirmed -- no such device was available to observe
+// -- but an unrecognised tag falls through to the display string, which is the
+// behaviour this driver has always relied on.
+private deviceKind(Map dev) {
+  def by_tag = [
+    'device_type.door_contact'     : 'contact',
+    'device_type.povs'             : 'motion',
+    'device_type.lm'               : 'multisensor',
+    'device_type.glass'            : 'glass',
+    'device_type.smoke_detector'   : 'smoke',
+    'device_type.water_sensor'     : 'water',
+    'device_type.doorbell'         : 'doorbell',
+    'device_type.keypad'           : 'keypad',
+    'device_type.remote_controller': 'remote',
+  ]
+  def by_type = [
+    'door contact'     : 'contact',
+    'occupancy'        : 'motion',
+    'motion sensor'    : 'motion',
+    'lm'               : 'multisensor',
+    'glass'            : 'glass',
+    'smoke detector'   : 'smoke',
+    'water sensor'     : 'water',
+    'doorbell'         : 'doorbell',
+    'keypad'           : 'keypad',
+    'remote controller': 'remote',
+  ]
+  def tag = dev?.type_tag?.toString()?.toLowerCase()
+  if (tag != null && by_tag.containsKey(tag)) return by_tag[tag]
+  def type = (dev?.type ?: dev?.device_type)?.toString()?.toLowerCase()
+  if (type != null && by_type.containsKey(type)) return by_type[type]
+  return ''
+}
+
 // Websocket message parsing
 private devicesToIgnore() {
   return [
@@ -712,7 +764,7 @@ def parseEvent(String event_text) {
           // Automation puts the rule name in device_name, which is backwards for our purposes
           alert_value = json_data.device_name
         } else {
-          alert_value = [json_data.device_name, event_type].findAll { it.isEmpty() == false }.join('=')
+          alert_value = [json_data.device_name, timelineAction(json_data)].findAll { it != null && it.isEmpty() == false }.join('=')
           if (user_info.isEmpty() == false)
             alert_type = user_info
           else if (json_data.device_type.isEmpty() == false)
@@ -727,25 +779,67 @@ def parseEvent(String event_text) {
             sendEnabledEvents(alert_value, message, alert_type)
 
           if (saveDevices) {
-            if (getChildDevice(json_data.device_id) != null) {
-              childDevice=getChildDevice(json_data.device_id)
-              if ( json_data.device_type == 'Door Contact' && json_data.event_type in ['Closed','Close'] ) childDevice.sendEvent(name: "contact", value: "closed", descriptionText: "${childDevice.displayName} is closed")
-              if ( json_data.device_type == 'Door Contact' && json_data.event_type in ['Opened','Open'] ) childDevice.sendEvent(name: "contact", value: "open",   descriptionText: "${childDevice.displayName} is open")
-              if ( json_data.device_type == 'Smoke Detector' && json_data.event_type == 'Smoke Alarm'  ) childDevice.sendEvent(name: "smoke", value: "detected",   descriptionText: "${childDevice.displayName} is detected")
-              if ( json_data.device_type == 'Smoke Detector' && json_data.event_type == 'Smoke Clear'  ) childDevice.sendEvent(name: "smoke", value: "clear",   descriptionText: "${childDevice.displayName} is clear")
-              if ( json_data.device_type == 'Water Sensor' && json_data.event_type == 'Water Detected' ) childDevice.sendEvent(name: "water", value: "wet",   descriptionText: "${childDevice.displayName} is wet")
-              if ( json_data.device_type == 'Water Sensor' && json_data.event_type == 'Water Detection Cleared' ) childDevice.sendEvent(name: "water", value: "dry",   descriptionText: "${childDevice.displayName} is dry")
-              if ( json_data.device_type == 'Doorbell' && json_data.event_type == 'Button Pressed' ) {
-                childDevice.sendEvent(name: "button", value: "pushed",   descriptionText: "${childDevice.displayName} is pushed")
-                runIn(60,"doorbellOff", [data: ["cid": json_data.device_id]] )
+            childDevice = getChildDevice(json_data.device_id)
+            if (childDevice != null) {
+              def kind    = deviceKind(json_data)
+              def action  = timelineAction(json_data).toLowerCase()
+              def handled = true
+              switch (kind) {
+                case 'contact':
+                  if (action in ['closed', 'close'])
+                    childDevice.sendEvent(name: "contact", value: "closed", descriptionText: "${childDevice.displayName} is closed")
+                  else if (action in ['opened', 'open'])
+                    childDevice.sendEvent(name: "contact", value: "open", descriptionText: "${childDevice.displayName} is open")
+                  else
+                    handled = false
+                  break
+
+                case 'smoke':
+                  if (action.contains('clear')) {
+                    childDevice.sendEvent(name: "smoke", value: "clear", descriptionText: "${childDevice.displayName} is clear")
+                  } else if (action.contains('alarm') || action.contains('smoke')) {
+                    childDevice.sendEvent(name: "smoke", value: "detected", descriptionText: "${childDevice.displayName} is detected")
+                    runIn(smokeClearDelay(), "smokeClear", [data: ["cid": json_data.device_id], overwrite: false])
+                  } else {
+                    handled = false
+                  }
+                  break
+
+                case 'water':
+                  if (action.contains('clear') || action.contains('dry'))
+                    childDevice.sendEvent(name: "water", value: "dry", descriptionText: "${childDevice.displayName} is dry")
+                  else if (action.contains('detect') || action.contains('wet'))
+                    childDevice.sendEvent(name: "water", value: "wet", descriptionText: "${childDevice.displayName} is wet")
+                  else
+                    handled = false
+                  break
+
+                case 'doorbell':
+                  if (action.contains('press') || action.contains('push')) {
+                    childDevice.sendEvent(name: "button", value: "pushed", descriptionText: "${childDevice.displayName} is pushed")
+                    childDevice.sendEvent(name: "pushed", value: 1, isStateChange: true, descriptionText: "${childDevice.displayName} button 1 was pushed")
+                    runIn(60, "doorbellOff", [data: ["cid": json_data.device_id], overwrite: false])
+                  } else {
+                    handled = false
+                  }
+                  break
+
+                case 'glass':
+                  // No clear event has ever been observed from Abode for GLASS,
+                  // so the scheduled reset is the only thing that restores it.
+                  if (logDebug) log.debug "Got GLASS event: " + json_data
+                  childDevice.sendEvent(name: "shock", value: "detected", descriptionText: "${childDevice.displayName} is detected")
+                  runIn(60, "glassClear", [data: ["cid": json_data.device_id], overwrite: false])
+                  break
+
+                default:
+                  handled = false
+                  break
               }
-              if ( json_data.device_type == 'GLASS' ) { // && json_data.event_type == '??????'
-                log.debug "Got GLASS event: " + json_data
-                childDevice.sendEvent(name: "shock", value: "detected",   descriptionText: "${childDevice.displayName} is detected")
-                runIn(60,"glassClear", [data: ["cid": json_data.device_id]] )
-              }
+              if (!handled)
+                log.warn "No handler matched Abode event: kind='${kind}' action='${action}' device='${json_data.device_name}' -- please report this with trace logging enabled"
             } else {
-              log.debug "Got unknown child event: " + json_data
+              if (logDebug) log.debug "Got event for a device with no child: " + json_data
             }
           }
         }
@@ -846,6 +940,14 @@ def parseEvent(String event_text) {
   } else {
     log.warn "Unparseable Abode event message: ${event_text}"
   }
+}
+
+// Safety net delay before a smoke alarm is assumed clear.  Abode does send a
+// clear event, but it has never been observed here, so this only applies when
+// one never arrives.  Longer than the doorbell and glass resets because
+// clearing a real smoke alarm early is worse than showing it a while longer.
+private smokeClearDelay() {
+  return 300
 }
 
 private motionOff(data) {
