@@ -21,6 +21,11 @@
   ) {
     capability 'ShockSensor'
     capability 'Sensor'
+    capability 'TamperAlert'
+    // Reported by Abode on every device; see updateChildFaults() in the parent
+    attribute 'lowBattery',  'ENUM', ['false', 'true']
+    attribute 'bypassed',    'ENUM', ['false', 'true']
+    attribute 'deviceFault', 'STRING'
     //capability 'Refresh'
     // shock - ENUM ["clear", "detected"]
   } 

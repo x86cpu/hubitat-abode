@@ -23,6 +23,11 @@
     capability "RelativeHumidityMeasurement"
     capability "TemperatureMeasurement"
     capability "IlluminanceMeasurement"
+    capability 'TamperAlert'
+    // Reported by Abode on every device; see updateChildFaults() in the parent
+    attribute 'lowBattery',  'ENUM', ['false', 'true']
+    attribute 'bypassed',    'ENUM', ['false', 'true']
+    attribute 'deviceFault', 'STRING'
     //capability 'Refresh'
     // humidity - NUMBER, unit:%rh
     // temperature - NUMBER, unit:°F || °C

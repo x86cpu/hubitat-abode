@@ -875,12 +875,56 @@ def parseEvent(String event_text) {
   }
 }
 
+// Abode reports a fault map on every device and none of it was used, so a
+// tampered, jammed or unresponsive sensor looked perfectly healthy in Hubitat.
+// low_battery and tempered map onto standard Hubitat attributes; the remaining
+// keys are summarised into one deviceFault string so a new fault type Abode
+// adds later still surfaces instead of being silently dropped.
+private updateChildFaults(childDevice, Map dev) {
+  def faults = dev['faults'] ?: [:]
+
+  if (!faults.isEmpty()) {
+    def active = faults.findAll { key, value ->
+      value != null && value.toString() != '0' && value.toString().toLowerCase() != 'false'
+    }.keySet().sort()
+
+    def low = active.contains('low_battery') ? 'true' : 'false'
+    if (childDevice.currentValue('lowBattery') != low)
+      childDevice.sendEvent(name: 'lowBattery', value: low, descriptionText: "${childDevice.displayName} low battery is ${low}")
+
+    def tamper = active.contains('tempered') ? 'detected' : 'clear'
+    if (childDevice.currentValue('tamper') != tamper)
+      childDevice.sendEvent(name: 'tamper', value: tamper, descriptionText: "${childDevice.displayName} tamper is ${tamper}")
+
+    def summary = active.isEmpty() ? 'none' : active.join(', ')
+    if (childDevice.currentValue('deviceFault') != summary) {
+      childDevice.sendEvent(name: 'deviceFault', value: summary, descriptionText: "${childDevice.displayName} faults: ${summary}")
+      if (!active.isEmpty())
+        log.warn "Abode reports fault(s) on ${childDevice.displayName}: ${summary}"
+    }
+  }
+
+  // bypass is not part of the fault map but is the same kind of hidden state:
+  // a sensor bypassed in the Abode app is excluded from the alarm, and Hubitat
+  // previously had no way of knowing that.
+  if (dev.containsKey('bypass')) {
+    def bypassed = (dev['bypass'] != null && dev['bypass'].toString() != '0') ? 'true' : 'false'
+    if (childDevice.currentValue('bypassed') != bypassed) {
+      childDevice.sendEvent(name: 'bypassed', value: bypassed, descriptionText: "${childDevice.displayName} bypassed is ${bypassed}")
+      if (bypassed == 'true')
+        log.warn "${childDevice.displayName} is bypassed in Abode and will not trigger the alarm"
+    }
+  }
+}
+
 // Apply the state carried in an Abode device record to its child device.
 // Used both by websocket device.update events and by the initial sync when
 // children are created, so the two paths cannot drift apart.
 private updateChildFromDevice(Map dev) {
   def childDevice = getChildDevice(dev['id'])
   if (childDevice == null) return
+
+  updateChildFaults(childDevice, dev)
 
   def kind     = deviceKind(dev)
   def statuses = dev['statuses'] ?: [:]
