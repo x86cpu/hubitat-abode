@@ -264,7 +264,7 @@ private baseURL() {
 }
 
 private driverUserAgent() {
-  return 'AbodeAlarm/0.7.0 Hubitat Elevation driver'
+  return 'AbodeAlarm/2.1.0 Hubitat Elevation driver'
 }
 
 private login() {
